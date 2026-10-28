@@ -4,21 +4,18 @@ import * as THREE from 'three';
 // summit.userData.playerStart (Vector3 spawn point). The Mountain set may replace
 // everything inside, but app.js depends on that return shape.
 
-// Mountain style proposal (not final): 600 m stylized-realistic peak.
-// Feeling references only, no copied assets:
-// - WoW Highmountain (tallest-peak presence, altitude-graded zones, harsh top):
-//   https://web.archive.org/web/20171030130849/https://worldofwarcraft.com/en-us/news/20241588
-// - Skyrim (light-grey jagged rock, snow patches, pines, pilgrim path):
-//   http://outsideinradio.org/transcript-open-worlds
-//
-// Option 1 pass: user-supplied rock textures (dark.jpg summit, light.png base),
-// derived bump, procedural snow, golden-evening sky dome, tight summit shadows.
-// No new geometry in this pass.
+// Mountain style proposal (not final): 600 m broad dome massif, stylized realism.
+// Shape feeling: broad wide dome, rounded peak with no tower, one long smooth
+// tumble chute from under the summit to the landing, dark rock with patchy snow
+// streaks, green base. Same systems as before: user rock textures, procedural
+// snow, golden evening, snow line ~400 m, treeline ~300 m, bare tumble face.
 const SUMMIT_Y = 600;
-// Main tumble face direction (radians around Y). Bare rock, no trees or snow.
+// Main tumble chute direction (radians around Y). Bare rock, no trees or snow.
 const FACE = Math.PI / 4;
 // Winding path direction: opposite side from the tumble face.
 const PATH = FACE + Math.PI;
+// Slope span in world meters (frustum y 0..550).
+const SLOPE_H = 550;
 
 // Tiny seeded random so the rock look is stable between reloads.
 function mulberry32(seed) {
@@ -52,16 +49,30 @@ function calm01(y01) {
   return Math.pow(Math.sin(Math.PI * THREE.MathUtils.clamp(y01, 0, 1)), 0.8);
 }
 
-// Ridge strength near the tumble face fades to 15% so the fall line stays clean.
+// Ridge strength near the tumble chute fades to 15% so the fall line stays clean.
 function faceCalm(theta) {
   return 0.15 + 0.85 * smoothstep(0.15, 0.7, angDiff(theta, FACE));
 }
 
-// Analytic slope surface radius at angle theta and height y (0..545).
-// Trees and path steps use this so they sit on the rock, not in the air.
-function slopeRadius(theta, y) {
-  const y01 = THREE.MathUtils.clamp(y / 545, 0, 1);
-  return (575 - y) * (1 + (ridge(theta) - 0.45) * 0.42 * calm01(y01) * faceCalm(theta));
+// Nominal skirt cone radius at world height y (no ridge detail).
+function coneR(y) {
+  return 90 + 510 * (540 - THREE.MathUtils.clamp(y, 0, 540)) / 540;
+}
+
+// Exact displaced slope surface radius, replicating the mesh displacement so
+// trees, path steps, and boulders sit on the rock instead of floating or burying.
+function surfR(theta, y) {
+  const yc = THREE.MathUtils.clamp(y, 0, SLOPE_H);
+  const y01 = yc / SLOPE_H;
+  const mask = 1 - smoothstep(0.15, 0.7, angDiff(theta, FACE));
+  const ridged = 1 + (ridge(theta) - 0.45) * 0.42 * calm01(y01) * faceCalm(theta);
+  return coneR(yc) * (ridged * (1 - mask) + (chuteR(yc) / coneR(yc)) * mask);
+}
+
+// Clean 45-degree chute line in the face sector (run y 540 -> 40, then runout).
+function chuteR(y) {
+  if (y >= 60) return 630 - y;
+  return 570 + (60 - y) * 0.5;
 }
 
 // --- Option 1 textures: user rock albedos, bump derived from each albedo
@@ -102,7 +113,8 @@ function snowTexture() {
 const snowTex = snowTexture();
 
 // Shared mountain rock material: light base rock grading to dark peak rock by
-// world height, procedural snow above ~400 m in crevices (never tumble face).
+// world height, procedural snow above ~400 m in crevices and streaks flanking
+// the chute (never on it, never a full cap).
 function mountainRockMaterial() {
   const mat = new THREE.MeshStandardMaterial({
     map: lightTex,
@@ -131,6 +143,7 @@ function mountainRockMaterial() {
                         texture2D(mapDark, vMapUv * vec2(36.0, 18.0)).rgb, grade);
         rock *= (0.82 + 0.18 * vColor.g);
         float snowM = smoothstep(400.0, 500.0, vWp.y) * vColor.g * (1.0 - vColor.r);
+        snowM = max(snowM, vColor.b * smoothstep(250.0, 450.0, vWp.y));
         vec3 snowT = texture2D(mapSnow, vMapUv * vec2(60.0, 30.0)).rgb;
         diffuseColor.rgb = mix(rock * uRockTint, snowT * uSnowTint, clamp(snowM, 0.0, 1.0));`)
       .replace('#include <color_fragment>', '');
@@ -139,9 +152,9 @@ function mountainRockMaterial() {
 }
 
 // Displace a Y-centered cylinder radially by radialFn(theta, y01). Vertex color
-// now carries masks for the shader: r = tumble-face gate (1 on face, no snow),
-// g = crevice (1 in gullies, snow settles here), b unused.
-function sculpt(geo, rand, yMin, yMax, radialFn) {
+// carries shader masks: r = chute gate (1 on the chute, no snow),
+// g = crevice (1 in gullies, snow settles here), b = chute-edge streaks.
+function sculpt(geo, rand, yMin, yMax, yBase, radialFn) {
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
@@ -157,11 +170,14 @@ function sculpt(geo, rand, yMin, yMax, radialFn) {
       s = radialFn(theta, y01);
       pos.setX(i, x * s);
       pos.setZ(i, z * s);
-      pos.setY(i, y + (rand() - 0.5) * (s - 1) * r * 0.08);
+      pos.setY(i, y + (rand() - 0.5) * (s - 1) * r * 0.03);
     }
-    colors[i * 3] = 1 - smoothstep(0.15, 0.7, angDiff(theta, FACE));
+    const wy = y + yBase;
+    const gate = smoothstep(0.15, 0.7, angDiff(theta, FACE));
+    colors[i * 3] = 1 - gate;
     colors[i * 3 + 1] = s < 1 ? 1 : 0.15;
-    colors[i * 3 + 2] = 1;
+    const streak = smoothstep(1.4, 0.45, angDiff(theta, FACE)) * (s < 1.05 ? 1 : 0);
+    colors[i * 3 + 2] = (wy > 250 && gate > 0.3 && rand() < 0.75) ? streak : 0;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.computeVertexNormals();
@@ -171,7 +187,7 @@ function sculpt(geo, rand, yMin, yMax, radialFn) {
 
 export function createSummit() {
   // Gathering place sits IN the summit terrain: fire, seating, and spawn rest
-  // on the rocky crown top at SUMMIT_Y, not on a separate platform.
+  // on the dome top at SUMMIT_Y, not on a separate platform.
   const summit = new THREE.Group();
   summit.name = 'summit-gathering-place';
 
@@ -216,70 +232,87 @@ export function createSummit() {
   return summit;
 }
 
-// Sculpted terrain: asymmetric crown + broken cliff band + ridged 45-degree
-// slope with play-along boulders + foothills + pines + winding path + landing.
+// Sculpted terrain: broad rounded dome + craggy shoulder + ridged skirt with
+// one long smooth tumble chute + play-along boulders + foothills + pines +
+// winding path + landing.
 export function createMountain() {
   const mountain = new THREE.Group();
   mountain.name = 'mountain';
   const rand = mulberry32(20261028);
   const rock = mountainRockMaterial();
 
-  // Summit crown: natural asymmetric rocky knob (y 570 -> 600), calm flat top
-  // ~32 m across where the gathering sits.
-  const crownGeo = sculpt(
-    new THREE.CylinderGeometry(16, 30, 30, 48, 6),
-    rand, -15, 15,
-    (theta, y01) => 1 + (ridge(theta) - 0.45) * 0.14 * (0.25 + 0.75 * calm01(y01))
+  // Summit dome: broad rounded cap (no tower), flattened calm top ~56 m across
+  // where the gathering sits. Mesh base at y 510, pole reaches SUMMIT_Y.
+  const domeGeo = sculpt(
+    new THREE.SphereGeometry(90, 48, 20, 0, Math.PI * 2, 0, 0.75),
+    rand, 65.8, 90, 510,
+    (theta, y01) => 1 + (ridge(theta) - 0.45) * 0.1 * (1 - y01 * 0.85)
   );
-  const crown = new THREE.Mesh(crownGeo, rock);
-  crown.position.y = SUMMIT_Y - 15;
-  crown.receiveShadow = true;
-  mountain.add(crown);
+  {
+    // Flatten the very top into a natural bowl floor for the gathering.
+    const pos = domeGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      if (Math.hypot(pos.getX(i), pos.getZ(i)) < 30 && pos.getY(i) > 80) {
+        pos.setY(i, 90);
+      }
+    }
+    domeGeo.computeVertexNormals();
+  }
+  const dome = new THREE.Mesh(domeGeo, rock);
+  dome.position.y = SUMMIT_Y - 90;
+  dome.receiveShadow = true;
+  mountain.add(dome);
 
-  // Sheer top: broken craggy cliff band below the crown (y 543 -> 575).
-  const cliffGeo = sculpt(
-    new THREE.CylinderGeometry(30.5, 33, 32, 48, 4),
-    rand, -16, 16,
+  // Shoulder: short craggy band closing dome rim to skirt top (y 534 -> 576).
+  const shoulderGeo = sculpt(
+    new THREE.CylinderGeometry(61, 110, 42, 48, 4),
+    rand, -21, 21, SUMMIT_Y - 45,
     (theta) => 1 + (ridge(theta + 0.7) - 0.45) * 0.3
   );
-  const cliff = new THREE.Mesh(cliffGeo, rock);
-  cliff.position.y = SUMMIT_Y - 41;
-  mountain.add(cliff);
+  const shoulder = new THREE.Mesh(shoulderGeo, rock);
+  shoulder.position.y = SUMMIT_Y - 45;
+  mountain.add(shoulder);
 
-  // Main slope: ridged peak y 545 -> 0. Ridges fade near the tumble face so it
-  // stays a clean bare-rock ~45-degree fall line; elsewhere buttresses and
-  // gullies vary the slope between roughly 38 and 52 degrees.
+  // Main skirt: broad ridged mountain y 0 -> 550. Ridges fade near the chute
+  // so the fall line stays a clean bare-rock 45-degree chute; elsewhere
+  // buttresses and gullies vary the slope.
   const slopeGeo = sculpt(
-    new THREE.CylinderGeometry(30, 575, 545, 128, 32),
-    rand, -272.5, 272.5,
-    (theta, y01) => 1 + (ridge(theta) - 0.45) * 0.42 * calm01(y01) * faceCalm(theta)
-                      + (rand() - 0.5) * 0.015 * calm01(y01)
+    new THREE.CylinderGeometry(90, 600, SLOPE_H, 128, 32),
+    rand, -SLOPE_H / 2, SLOPE_H / 2, SLOPE_H / 2,
+    (theta, y01) => {
+      const wy = y01 * SLOPE_H;
+      const mask = 1 - smoothstep(0.15, 0.7, angDiff(theta, FACE));
+      const target = chuteR(wy) / coneR(wy);
+      const ridged = 1 + (ridge(theta) - 0.45) * 0.42 * calm01(y01) * faceCalm(theta);
+      return ridged * (1 - mask) + target * mask;
+    }
   );
   const slope = new THREE.Mesh(slopeGeo, rock);
-  slope.position.y = 272.5;
+  slope.position.y = SLOPE_H / 2;
   slope.receiveShadow = true;
   mountain.add(slope);
 
-  // Play-along boulders: flank the tumble face in pairs and stand proud of the
-  // surface, so falls glance off and bounce further instead of stopping.
+  // Play-along boulders: two rough lines flanking the chute like couloir walls,
+  // standing proud so falls glance off and bounce further instead of stopping.
   const bSeed = mulberry32(77);
   const putBoulder = (theta, y, s, sink) => {
-    const r = 575 - y;
+    const r = surfR(theta, y);
     const bGeo = sculpt(
       new THREE.DodecahedronGeometry(s, 0),
-      bSeed, -s, s, () => 1 + (bSeed() - 0.5) * 0.35
+      bSeed, -s, s, y, () => 1 + (bSeed() - 0.5) * 0.35
     );
     const b = new THREE.Mesh(bGeo, rock);
     b.position.set(Math.cos(theta) * (r - s * sink), y, Math.sin(theta) * (r - s * sink));
     b.rotation.set(bSeed() * 3, bSeed() * 3, bSeed() * 3);
     mountain.add(b);
   };
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 6; i++) {
     const side = i % 2 === 0 ? 1 : -1;
-    putBoulder(FACE + side * (0.3 + bSeed() * 0.5), 60 + bSeed() * 420, 5 + bSeed() * 9, 0.2);
+    putBoulder(FACE + side * (0.35 + (i >> 1) * 0.12), 120 + (i >> 1) * 130, 10 + bSeed() * 8, 0.3);
   }
-  for (let i = 0; i < 4; i++) {
-    putBoulder(bSeed() * Math.PI * 2, 60 + bSeed() * 420, 5 + bSeed() * 9, 0.4);
+  for (let i = 0; i < 8; i++) {
+    const side = i % 2 === 0 ? 1 : -1;
+    putBoulder(FACE + side * (0.5 + bSeed() * 0.5), 60 + bSeed() * 440, 5 + bSeed() * 9, 0.35);
   }
 
   // Foothills: smaller rocky shoulders around the main peak for scale.
@@ -288,10 +321,10 @@ export function createMountain() {
   for (let i = 0; i < hillAngles.length; i++) {
     const h = 90 + hillSeed() * 80;
     const hr = 120 + hillSeed() * 80;
-    const dist = 500 + hillSeed() * 120;
+    const dist = 560 + hillSeed() * 120;
     const hGeo = sculpt(
       new THREE.CylinderGeometry(hr * 0.25, hr, h, 32, 8),
-      hillSeed, -h / 2, h / 2,
+      hillSeed, -h / 2, h / 2, 0,
       (theta, y01) => 1 + (ridge(theta + i) - 0.45) * 0.4 * calm01(y01)
     );
     const hill = new THREE.Mesh(hGeo, rock);
@@ -301,8 +334,8 @@ export function createMountain() {
   }
 
   // Pine trees for scale: dark-green pines on the slope edges and landing
-  // apron, sunk onto the analytic surface. Below the ~300 m treeline,
-  // never on the tumble face.
+  // apron, sunk onto the exact surface. Below the ~300 m treeline,
+  // never on the tumble chute.
   const trunkGeo = new THREE.CylinderGeometry(0.5, 0.8, 4, 6);
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3826 });
   const coneMat = new THREE.MeshStandardMaterial({ color: 0x2d4a2d, flatShading: true });
@@ -312,12 +345,12 @@ export function createMountain() {
     const theta = tSeed() * Math.PI * 2;
     if (angDiff(theta, FACE) < 0.75) continue;
     const y = 5 + tSeed() * 295;
-    treeSpots.push({ theta, y, r: slopeRadius(theta, y), s: 1.2 + tSeed() * 1.0 });
+    treeSpots.push({ theta, y, r: surfR(theta, y), s: 1.2 + tSeed() * 1.0 });
   }
   for (let i = 0; i < 8; i++) {
     const theta = tSeed() * Math.PI * 2;
     if (angDiff(theta, FACE) < 0.5) continue;
-    treeSpots.push({ theta, y: 2, r: 590 + tSeed() * 40, s: 1.6 + tSeed() * 0.8 });
+    treeSpots.push({ theta, y: 2, r: 610 + tSeed() * 30, s: 1.6 + tSeed() * 0.8 });
   }
   const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, treeSpots.length);
   const coneGeo1 = new THREE.ConeGeometry(4, 7, 7);
@@ -340,20 +373,20 @@ export function createMountain() {
 
   // Winding path: dusty switchback trail up the far side from the landing.
   const pathMat = new THREE.MeshStandardMaterial({ color: 0x9a8a6e });
-  const stepGeo = new THREE.BoxGeometry(5, 0.6, 3);
+  const stepGeo = new THREE.BoxGeometry(5, 1.6, 3);
   for (let i = 0; i < 26; i++) {
     const y = 4 + (i / 25) * 420;
     const theta = PATH + 0.5 * Math.sin((i / 25) * Math.PI * 3);
-    const r = slopeRadius(theta, y) + 1;
+    const r = surfR(theta, y) + 1.8;
     const step = new THREE.Mesh(stepGeo, pathMat);
-    step.position.set(Math.cos(theta) * r, y + 1, Math.sin(theta) * r);
+    step.position.set(Math.cos(theta) * r, y + 1.8, Math.sin(theta) * r);
     step.rotation.y = -theta;
     mountain.add(step);
   }
 
   // Bottom landing: same rock treatment, catching the slope foot.
   const landing = new THREE.Mesh(
-    new THREE.CylinderGeometry(640, 640, 2, 64),
+    new THREE.CylinderGeometry(700, 700, 2, 64),
     rock
   );
   landing.position.y = -0.7;
@@ -430,8 +463,8 @@ export function createScene() {
   scene.add(sun, sun.target);
 
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(1600, 1600),
-    new THREE.MeshStandardMaterial({ color: 0x6b6257 })
+    new THREE.PlaneGeometry(2200, 2200),
+    new THREE.MeshStandardMaterial({ color: 0x5a6b45 })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.name = 'ground-plane';
