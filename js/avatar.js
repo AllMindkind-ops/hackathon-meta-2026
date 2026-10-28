@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+// FROZEN CONTRACT: keep createAvatar() -> THREE.Group with origin at the feet.
+// app.js places it at summit.userData.playerStart. The Avatar set may replace the
+// body, but keep the origin, rough human scale, and export name.
 // Simple placeholder humanoid. Temporary: replaced by the Avatar set later.
 export function createAvatar() {
   const avatar = new THREE.Group();

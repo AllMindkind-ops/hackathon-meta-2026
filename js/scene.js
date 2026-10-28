@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+// FROZEN CONTRACT: keep createScene() -> { scene, summit } and
+// summit.userData.playerStart (Vector3 spawn point). The Mountain set may replace
+// everything inside, but app.js depends on that return shape.
 // Placeholder summit gathering place. Temporary: replaced by the Mountain set later.
 export function createSummit() {
   const summit = new THREE.Group();

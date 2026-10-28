@@ -1,3 +1,8 @@
+// FROZEN CONTRACT (base commit af21917): app.js only wires modules.
+// Fan-out agents: do not change these imports or the boot order.
+// scene.js: createScene() -> { scene, summit }; summit.userData.playerStart (Vector3) is the spawn.
+// avatar.js: createAvatar() -> THREE.Group, origin at feet.
+// camera.js: createCamera(avatar) -> camera; placeBehindAvatar(camera, avatar).
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { createAvatar } from './avatar.js';

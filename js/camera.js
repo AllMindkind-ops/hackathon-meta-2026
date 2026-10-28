@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 
+// FROZEN CONTRACT: keep createCamera(avatar) and placeBehindAvatar(camera, avatar).
+// The camera set owns this file; other sets must not change these signatures.
 // Third-person default camera. Placeholder: replaced by the camera set later.
 export function createCamera(avatar) {
   const camera = new THREE.PerspectiveCamera(
