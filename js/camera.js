@@ -8,7 +8,7 @@ export function createCamera(avatar) {
     60,
     window.innerWidth / window.innerHeight,
     0.1,
-    3000
+    500
   );
   camera.name = 'third-person-camera';
   placeBehindAvatar(camera, avatar);
