@@ -4,9 +4,9 @@ import * as THREE from 'three';
 // summit.userData.playerStart (Vector3 spawn point). The Mountain set may replace
 // everything inside, but app.js depends on that return shape.
 
-// Mountain style proposal (not final): same 300 m sizes as the greybox,
-// with a craggy rock look. All heights in meters.
-const SUMMIT_Y = 300;
+// Mountain style proposal (not final): 600 m rocky peak with a natural summit.
+// All heights in meters.
+const SUMMIT_Y = 600;
 
 // Tiny seeded random so the rock look is stable between reloads.
 function mulberry32(seed) {
@@ -55,19 +55,12 @@ function rockMaterial() {
 }
 
 export function createSummit() {
+  // Gathering place sits IN the summit terrain: fire, seating, and spawn rest
+  // on the flattened rocky crown at SUMMIT_Y, not on a separate platform.
   const summit = new THREE.Group();
   summit.name = 'summit-gathering-place';
 
-  // Summit flat: 30 m across disc, top surface at SUMMIT_Y.
-  const platform = new THREE.Mesh(
-    new THREE.CylinderGeometry(15, 15, 2, 48),
-    new THREE.MeshStandardMaterial({ color: 0x8a8f98 })
-  );
-  platform.position.y = SUMMIT_Y - 1;
-  platform.receiveShadow = true;
-  summit.add(platform);
-
-  // Placeholder fire: stone pit + flame cone + warm light. Same layout as base, lifted.
+  // Placeholder fire: stone pit + flame cone + warm light.
   const pit = new THREE.Mesh(
     new THREE.CylinderGeometry(0.7, 0.8, 0.3, 12),
     new THREE.MeshStandardMaterial({ color: 0x4a4a4f })
@@ -108,39 +101,50 @@ export function createSummit() {
   return summit;
 }
 
-// Rocky terrain: craggy cliff ring + faceted 45-degree slope with boulders + landing.
+// Rocky terrain: summit crown + cliff ring + single 45-degree slope + landing.
 export function createMountain() {
   const mountain = new THREE.Group();
   mountain.name = 'mountain';
   const rand = mulberry32(20261028);
 
-  // Sheer drop: ~20 m craggy cliff ring below the summit edge (y 280 -> 300).
+  // Summit crown: natural rocky knob (y 570 -> 600), calm flat top ~32 m across
+  // where the gathering sits. No separate disc.
+  const crownGeo = roughen(
+    new THREE.CylinderGeometry(16, 30, 30, 32, 6),
+    rand, (y01) => 0.02 + 0.08 * Math.sin(y01 * Math.PI), 0x5c574f, 0x847d70
+  );
+  const crown = new THREE.Mesh(crownGeo, rockMaterial());
+  crown.position.y = SUMMIT_Y - 15;
+  crown.receiveShadow = true;
+  mountain.add(crown);
+
+  // Sheer drop: ~30 m craggy cliff ring below the crown (y 543 -> 575).
   const cliffGeo = roughen(
-    new THREE.CylinderGeometry(15.5, 17, 22, 24, 4),
+    new THREE.CylinderGeometry(30.5, 33, 32, 32, 4),
     rand, () => 0.12, 0x4e4a44, 0x6e675e
   );
   const cliff = new THREE.Mesh(cliffGeo, rockMaterial());
-  cliff.position.y = SUMMIT_Y - 11;
+  cliff.position.y = SUMMIT_Y - 41;
   mountain.add(cliff);
 
-  // Main slope: 45-degree frustum, y 280 -> 0, broken into rock facets.
+  // Main slope: 45-degree frustum, y 545 -> 0 (545 down, 545 out, face ~771 m).
   // Calm at the top rim and foot so junctions stay clean, rugged mid-slope.
   const slopeGeo = roughen(
-    new THREE.CylinderGeometry(15, 295, 280, 48, 24),
+    new THREE.CylinderGeometry(30, 575, 545, 64, 32),
     rand, (y01) => 0.02 + 0.1 * Math.sin(y01 * Math.PI), 0x5c574f, 0x847d70
   );
   const slope = new THREE.Mesh(slopeGeo, rockMaterial());
-  slope.position.y = 140;
+  slope.position.y = 272.5;
   slope.receiveShadow = true;
   mountain.add(slope);
 
   // Boulders half-buried in the slope face for rock character.
   const boulderMat = rockMaterial();
-  for (let i = 0; i < 10; i++) {
-    const y = 30 + rand() * 220;
-    const r = 295 - y;
+  for (let i = 0; i < 14; i++) {
+    const y = 40 + rand() * 460;
+    const r = 575 - y;
     const a = rand() * Math.PI * 2;
-    const s = 4 + rand() * 9;
+    const s = 5 + rand() * 9;
     const bGeo = roughen(new THREE.DodecahedronGeometry(s, 0), rand, () => 0.35, 0x55514b, 0x7a746a);
     const b = new THREE.Mesh(bGeo, boulderMat);
     b.position.set(Math.cos(a) * (r - s * 0.3), y, Math.sin(a) * (r - s * 0.3));
@@ -150,7 +154,7 @@ export function createMountain() {
 
   // Bottom landing: wide flat disc catching the slope foot, with look-back apron.
   const landing = new THREE.Mesh(
-    new THREE.CylinderGeometry(340, 340, 2, 64),
+    new THREE.CylinderGeometry(640, 640, 2, 64),
     new THREE.MeshStandardMaterial({ color: 0x6b655c })
   );
   landing.position.y = -0.7;
@@ -171,7 +175,7 @@ export function createScene() {
   scene.add(hemi);
 
   const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-  sun.position.set(60, 320, 80);
+  sun.position.set(120, 640, 160);
   scene.add(sun);
 
   const ground = new THREE.Mesh(

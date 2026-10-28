@@ -33,14 +33,14 @@ export function placeBehindAvatar(camera, avatar) {
 
 // TEMPORARY REVIEW ONLY: whole mountain in one frame from a distance.
 export function frameWideView(camera) {
-  camera.position.set(220, 180, 220);
-  camera.lookAt(0, 140, 0);
+  camera.position.set(440, 360, 440);
+  camera.lookAt(0, 280, 0);
 }
 
 // TEMPORARY REVIEW ONLY: from the landing apron, looking back up at the summit.
 export function frameLookbackView(camera) {
-  camera.position.set(330, 10, 40);
-  camera.lookAt(0, 270, 0);
+  camera.position.set(610, 12, 60);
+  camera.lookAt(0, 560, 0);
 }
 
 // TEMPORARY REVIEW ONLY: keys 1/2/3 or tap cycle the three views.
