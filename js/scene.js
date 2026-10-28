@@ -126,7 +126,7 @@ function mountainRockMaterial() {
     sh.uniforms.mapDark = { value: darkTex };
     sh.uniforms.mapSnow = { value: snowTex };
     sh.uniforms.uRockTint = { value: new THREE.Color(0.8, 0.85, 0.92) };
-    sh.uniforms.uSnowTint = { value: new THREE.Color(0.85, 0.92, 1.0) };
+    sh.uniforms.uSnowTint = { value: new THREE.Color(0.9, 0.95, 1.0) };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWp;')
       .replace('#include <fog_vertex>', '#include <fog_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -336,9 +336,44 @@ export function createMountain() {
   // Pine trees for scale: dark-green pines on the slope edges and landing
   // apron, sunk onto the exact surface. Below the ~300 m treeline,
   // never on the tumble chute.
-  const trunkGeo = new THREE.CylinderGeometry(0.5, 0.8, 4, 6);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3826 });
-  const coneMat = new THREE.MeshStandardMaterial({ color: 0x2d4a2d, flatShading: true });
+  // Painted pine sprite: layered washes with snow-dusted top edges, alpha cutout.
+  function pineSprite() {
+    const c = document.createElement('canvas');
+    c.width = 128;
+    c.height = 256;
+    const g = c.getContext('2d');
+    const r = mulberry32(31);
+    g.fillStyle = '#4a3826';
+    g.fillRect(60, 200, 8, 56);
+    const layer = (cx, top, base, w, col, hi) => {
+      g.fillStyle = col;
+      g.beginPath();
+      g.moveTo(cx, top);
+      g.lineTo(cx - w / 2, base);
+      g.lineTo(cx + w / 2, base);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = hi;
+      g.lineWidth = 4;
+      g.beginPath();
+      g.moveTo(cx, top + 6);
+      g.lineTo(cx - w / 2 + 8, base - 4);
+      g.moveTo(cx, top + 6);
+      g.lineTo(cx + w / 2 - 8, base - 4);
+      g.stroke();
+    };
+    layer(64, 40, 150, 104, '#24402a', '#3f6b41');
+    layer(64, 100, 200, 84, '#27462c', '#45704a');
+    layer(64, 155, 235, 62, '#2b4c30', '#4d7a52');
+    g.fillStyle = 'rgba(232,238,242,0.9)';
+    for (let i = 0; i < 90; i++) {
+      g.fillRect(20 + r() * 88, 40 + r() * 150, 2, 2);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    return t;
+  }
   const treeSpots = [];
   const tSeed = mulberry32(551);
   while (treeSpots.length < 44) {
@@ -352,24 +387,28 @@ export function createMountain() {
     if (angDiff(theta, FACE) < 0.5) continue;
     treeSpots.push({ theta, y: 2, r: 610 + tSeed() * 30, s: 1.6 + tSeed() * 0.8 });
   }
-  const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, treeSpots.length);
-  const coneGeo1 = new THREE.ConeGeometry(4, 7, 7);
-  const coneGeo2 = new THREE.ConeGeometry(2.8, 5, 7);
-  const coneMesh1 = new THREE.InstancedMesh(coneGeo1, coneMat, treeSpots.length);
-  const coneMesh2 = new THREE.InstancedMesh(coneGeo2, coneMat, treeSpots.length);
-  const m = new THREE.Matrix4();
-  treeSpots.forEach((t, i) => {
-    const x = Math.cos(t.theta) * t.r;
-    const z = Math.sin(t.theta) * t.r;
-    m.makeScale(t.s, t.s, t.s);
-    m.setPosition(x, t.y - 4 + 2 * t.s, z);
-    trunkMesh.setMatrixAt(i, m);
-    m.setPosition(x, t.y - 4 + 5.5 * t.s, z);
-    coneMesh1.setMatrixAt(i, m);
-    m.setPosition(x, t.y - 4 + 9 * t.s, z);
-    coneMesh2.setMatrixAt(i, m);
+  // Fake foliage: crossed alpha-cutout billboards, two draw calls for all trees.
+  const pineGeo = new THREE.PlaneGeometry(8, 16);
+  pineGeo.translate(0, 8, 0);
+  const pineMat = new THREE.MeshStandardMaterial({
+    map: pineSprite(), alphaTest: 0.45, side: THREE.DoubleSide,
   });
-  mountain.add(trunkMesh, coneMesh1, coneMesh2);
+  const pineA = new THREE.InstancedMesh(pineGeo, pineMat, treeSpots.length);
+  const pineB = new THREE.InstancedMesh(pineGeo, pineMat, treeSpots.length);
+  const m = new THREE.Matrix4();
+  const q0 = new THREE.Quaternion();
+  const q90 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  const pv = new THREE.Vector3();
+  const ps = new THREE.Vector3();
+  treeSpots.forEach((t, i) => {
+    pv.set(Math.cos(t.theta) * t.r, t.y - 2, Math.sin(t.theta) * t.r);
+    ps.set(t.s, t.s, t.s);
+    m.compose(pv, q0, ps);
+    pineA.setMatrixAt(i, m);
+    m.compose(pv, q90, ps);
+    pineB.setMatrixAt(i, m);
+  });
+  mountain.add(pineA, pineB);
 
   // Winding path: dusty switchback trail up the far side from the landing.
   const pathMat = new THREE.MeshStandardMaterial({ color: 0x9a8a6e });
@@ -382,6 +421,46 @@ export function createMountain() {
     step.position.set(Math.cos(theta) * r, y + 1.8, Math.sin(theta) * r);
     step.rotation.y = -theta;
     mountain.add(step);
+  }
+
+  // Painted clouds: soft billboard streaks parked high around the peak.
+  function cloudSprite() {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 128;
+    const g = c.getContext('2d');
+    const r = mulberry32(99);
+    for (let i = 0; i < 26; i++) {
+      const x = 30 + r() * 196;
+      const y = 45 + r() * 40;
+      const rx = 22 + r() * 30;
+      const ry = 10 + r() * 12;
+      const grad = g.createRadialGradient(x, y, 2, x, y, rx);
+      grad.addColorStop(0, 'rgba(255,244,230,0.85)');
+      grad.addColorStop(0.7, 'rgba(255,220,190,0.4)');
+      grad.addColorStop(1, 'rgba(255,220,190,0)');
+      g.fillStyle = grad;
+      g.beginPath();
+      g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+  const cloudMat = new THREE.MeshBasicMaterial({
+    map: cloudSprite(), transparent: true, depthWrite: false, fog: false,
+    side: THREE.DoubleSide,
+  });
+  const cloudGeo = new THREE.PlaneGeometry(150, 60);
+  const cSeed = mulberry32(7);
+  for (let i = 0; i < 6; i++) {
+    const a = cSeed() * Math.PI * 2;
+    const d = 700 + cSeed() * 320;
+    const cloud = new THREE.Mesh(cloudGeo, cloudMat);
+    cloud.position.set(Math.cos(a) * d, 680 + cSeed() * 110, Math.sin(a) * d);
+    cloud.lookAt(0, cloud.position.y, 0);
+    mountain.add(cloud);
   }
 
   // Bottom landing: same rock treatment, catching the slope foot.
@@ -404,8 +483,8 @@ function createSky(sunDir) {
     depthWrite: false,
     fog: false,
     uniforms: {
-      top: { value: new THREE.Color(0x2f4a73) },
-      horizon: { value: new THREE.Color(0xf0ab6e) },
+      top: { value: new THREE.Color(0x2a3f66) },
+      horizon: { value: new THREE.Color(0xf7b46e) },
       glow: { value: new THREE.Color(0xffe2b0) },
       sunDir: { value: sunDir.clone().normalize() },
     },
@@ -427,6 +506,9 @@ function createSky(sunDir) {
         if (vDir.y < 0.0) col = mix(horizon, horizon * 0.55, clamp(-vDir.y * 3.0, 0.0, 1.0));
         float s = max(dot(normalize(vDir), sunDir), 0.0);
         col += glow * (pow(s, 350.0) * 1.2 + pow(s, 8.0) * 0.22);
+        float band = sin(vDir.y * 46.0 + atan(vDir.z, vDir.x) * 2.0) * 0.5 + 0.5;
+        float bandM = smoothstep(0.03, 0.12, vDir.y) * (1.0 - smoothstep(0.12, 0.3, vDir.y));
+        col = mix(col, vec3(1.0, 0.85, 0.75), bandM * smoothstep(0.4, 0.8, band) * 0.5);
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
@@ -462,9 +544,25 @@ export function createScene() {
   sun.shadow.normalBias = 2;
   scene.add(sun, sun.target);
 
+  // Painted meadow: warm grassy center fading to dusk at the edges.
+  function meadowTexture() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 512;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(256, 256, 40, 256, 256, 256);
+    grad.addColorStop(0, '#77854e');
+    grad.addColorStop(0.55, '#5a6b45');
+    grad.addColorStop(1, '#55554e');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 512, 512);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    return t;
+  }
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(2200, 2200),
-    new THREE.MeshStandardMaterial({ color: 0x5a6b45 })
+    new THREE.MeshStandardMaterial({ map: meadowTexture() })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.name = 'ground-plane';
