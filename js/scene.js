@@ -4,8 +4,55 @@ import * as THREE from 'three';
 // summit.userData.playerStart (Vector3 spawn point). The Mountain set may replace
 // everything inside, but app.js depends on that return shape.
 
-// Greybox mountain: plain shapes, no color detail. All heights in meters.
+// Mountain style proposal (not final): same 300 m sizes as the greybox,
+// with a craggy rock look. All heights in meters.
 const SUMMIT_Y = 300;
+
+// Tiny seeded random so the rock look is stable between reloads.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Push vertices around radially for a broken rock silhouette, then paint
+// per-vertex rock tones between dark and light. ampFn(y01) scales the ruggedness
+// along the height (0 bottom, 1 top) so junctions stay clean.
+function roughen(geo, rand, ampFn, dark, light) {
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const cDark = new THREE.Color(dark);
+  const cLight = new THREE.Color(light);
+  const tmp = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const r = Math.hypot(x, z);
+    if (r > 0.01) {
+      const y01 = THREE.MathUtils.clamp(y / 140 + 0.5, 0, 1);
+      const k = 1 + (rand() - 0.5) * ampFn(y01);
+      pos.setX(i, x * k);
+      pos.setZ(i, z * k);
+      pos.setY(i, y + (rand() - 0.5) * ampFn(y01) * r * 0.15);
+    }
+    tmp.copy(cDark).lerp(cLight, rand());
+    colors[i * 3] = tmp.r;
+    colors[i * 3 + 1] = tmp.g;
+    colors[i * 3 + 2] = tmp.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function rockMaterial() {
+  return new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true });
+}
 
 export function createSummit() {
   const summit = new THREE.Group();
@@ -61,27 +108,51 @@ export function createSummit() {
   return summit;
 }
 
-// Greybox terrain: cliff ring + single 45-degree slope + landing disc.
+// Rocky terrain: craggy cliff ring + faceted 45-degree slope with boulders + landing.
 export function createMountain() {
   const mountain = new THREE.Group();
-  mountain.name = 'greybox-mountain';
-  const rock = new THREE.MeshStandardMaterial({ color: 0x7d7f88 });
+  mountain.name = 'mountain';
+  const rand = mulberry32(20261028);
 
-  // Sheer drop: ~20 m near-vertical cliff ring below the summit edge (y 280 -> 300).
-  const cliff = new THREE.Mesh(new THREE.CylinderGeometry(15.5, 17, 22, 48), rock);
+  // Sheer drop: ~20 m craggy cliff ring below the summit edge (y 280 -> 300).
+  const cliffGeo = roughen(
+    new THREE.CylinderGeometry(15.5, 17, 22, 24, 4),
+    rand, () => 0.12, 0x4e4a44, 0x6e675e
+  );
+  const cliff = new THREE.Mesh(cliffGeo, rockMaterial());
   cliff.position.y = SUMMIT_Y - 11;
   mountain.add(cliff);
 
-  // Main slope: 45-degree frustum from y 280 down to y 0
-  // (280 m vertical = 280 m run, face ~396 m). One simple surface for the fall test.
-  const slope = new THREE.Mesh(new THREE.CylinderGeometry(15, 295, 280, 64), rock);
+  // Main slope: 45-degree frustum, y 280 -> 0, broken into rock facets.
+  // Calm at the top rim and foot so junctions stay clean, rugged mid-slope.
+  const slopeGeo = roughen(
+    new THREE.CylinderGeometry(15, 295, 280, 48, 24),
+    rand, (y01) => 0.02 + 0.1 * Math.sin(y01 * Math.PI), 0x5c574f, 0x847d70
+  );
+  const slope = new THREE.Mesh(slopeGeo, rockMaterial());
   slope.position.y = 140;
   slope.receiveShadow = true;
   mountain.add(slope);
 
-  // Bottom landing: wide flat disc catching the 590 m-wide slope foot,
-  // with a look-back apron past it. Top surface at y 0.3.
-  const landing = new THREE.Mesh(new THREE.CylinderGeometry(340, 340, 2, 64), rock);
+  // Boulders half-buried in the slope face for rock character.
+  const boulderMat = rockMaterial();
+  for (let i = 0; i < 10; i++) {
+    const y = 30 + rand() * 220;
+    const r = 295 - y;
+    const a = rand() * Math.PI * 2;
+    const s = 4 + rand() * 9;
+    const bGeo = roughen(new THREE.DodecahedronGeometry(s, 0), rand, () => 0.35, 0x55514b, 0x7a746a);
+    const b = new THREE.Mesh(bGeo, boulderMat);
+    b.position.set(Math.cos(a) * (r - s * 0.3), y, Math.sin(a) * (r - s * 0.3));
+    b.rotation.set(rand() * 3, rand() * 3, rand() * 3);
+    mountain.add(b);
+  }
+
+  // Bottom landing: wide flat disc catching the slope foot, with look-back apron.
+  const landing = new THREE.Mesh(
+    new THREE.CylinderGeometry(340, 340, 2, 64),
+    new THREE.MeshStandardMaterial({ color: 0x6b655c })
+  );
   landing.position.y = -0.7;
   landing.receiveShadow = true;
   mountain.add(landing);
