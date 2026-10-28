@@ -4,11 +4,17 @@ import * as THREE from 'three';
 // summit.userData.playerStart (Vector3 spawn point). The Mountain set may replace
 // everything inside, but app.js depends on that return shape.
 
-// Mountain style proposal (not final): 600 m sculpted peak, stylized realism.
-// Ridges and gullies break the cone; the main tumble face stays near 45 degrees.
+// Mountain style proposal (not final): 600 m stylized-realistic peak.
+// Feeling references only, no copied assets:
+// - WoW Highmountain (tallest-peak presence, altitude-graded zones, harsh top):
+//   https://web.archive.org/web/20171030130849/https://worldofwarcraft.com/en-us/news/20241588
+// - Skyrim (light-grey jagged rock, snow patches, pines, pilgrim path):
+//   http://outsideinradio.org/transcript-open-worlds
 const SUMMIT_Y = 600;
-// Main tumble face direction (radians around Y). Faces the default cameras.
+// Main tumble face direction (radians around Y). Bare rock, no trees or snow.
 const FACE = Math.PI / 4;
+// Winding path direction: opposite side from the tumble face.
+const PATH = FACE + Math.PI;
 
 // Tiny seeded random so the rock look is stable between reloads.
 function mulberry32(seed) {
@@ -37,13 +43,32 @@ function ridge(theta) {
        + 0.45 * Math.abs(Math.sin(7 * theta + 0.5));
 }
 
+// 0 at slope rims so junctions stay clean, 1 mid-slope.
+function calm01(y01) {
+  return Math.pow(Math.sin(Math.PI * THREE.MathUtils.clamp(y01, 0, 1)), 0.8);
+}
+
+// Ridge strength near the tumble face fades to 15% so the fall line stays clean.
+function faceCalm(theta) {
+  return 0.15 + 0.85 * smoothstep(0.15, 0.7, angDiff(theta, FACE));
+}
+
+// Analytic slope surface radius at angle theta and height y (0..545).
+// Trees and path steps use this so they sit on the rock, not in the air.
+function slopeRadius(theta, y) {
+  const y01 = THREE.MathUtils.clamp(y / 545, 0, 1);
+  return (575 - y) * (1 + (ridge(theta) - 0.45) * 0.42 * calm01(y01) * faceCalm(theta));
+}
+
 // Displace a Y-centered cylinder radially by radialFn(theta, y01) and paint
-// per-vertex rock tones (gullies darker, ridges lighter).
-function sculpt(geo, rand, yMin, yMax, radialFn, dark, light) {
+// per-vertex tones: light-grey cracked base rock grading to dark peak rock
+// with height, snow settling in high crevices but never on the tumble face.
+function sculpt(geo, rand, yMin, yMax, radialFn) {
+  const light = new THREE.Color(0x8a857c);
+  const dark = new THREE.Color(0x3f3b36);
+  const snowC = new THREE.Color(0xe8eef2);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
-  const cDark = new THREE.Color(dark);
-  const cLight = new THREE.Color(light);
   const tmp = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
@@ -51,16 +76,28 @@ function sculpt(geo, rand, yMin, yMax, radialFn, dark, light) {
     const z = pos.getZ(i);
     const r = Math.hypot(x, z);
     let s = 1;
+    let theta = 0;
     if (r > 0.01) {
-      const theta = Math.atan2(z, x);
+      theta = Math.atan2(z, x);
       const y01 = THREE.MathUtils.clamp((y - yMin) / (yMax - yMin), 0, 1);
       s = radialFn(theta, y01);
       pos.setX(i, x * s);
       pos.setZ(i, z * s);
-      pos.setY(i, y + (rand() - 0.5) * (s - 1) * r * 0.2);
+      pos.setY(i, y + (rand() - 0.5) * (s - 1) * r * 0.08);
     }
-    const t = THREE.MathUtils.clamp(0.5 + (s - 1) * 2, 0, 1) * 0.6 + rand() * 0.4;
-    tmp.copy(cDark).lerp(cLight, t);
+    // Crackle: thin dark cracks scattered through the rock.
+    const crack = rand() < 0.16 ? 0.72 : 1;
+    // Altitude grade: light base rock to dark peak rock.
+    const y01c = THREE.MathUtils.clamp((y - yMin) / (yMax - yMin), 0, 1);
+    tmp.copy(light).lerp(dark, smoothstep(0.15, 0.85, y01c));
+    tmp.multiplyScalar(crack * (0.9 + rand() * 0.2));
+    // Gully tone: crevices darker, ridges lighter.
+    tmp.multiplyScalar(0.92 + THREE.MathUtils.clamp((s - 1) * 2, -0.12, 0.12));
+    // Snow patches: high crevices and valleys, never the tumble face.
+    const onFace = smoothstep(0.15, 0.7, angDiff(theta, FACE)) < 0.5;
+    if (!onFace && y01c > 0.45 && s < 1.0 && rand() < 0.8) {
+      tmp.lerp(snowC, smoothstep(0.45, 0.7, y01c) * 0.9);
+    }
     colors[i * 3] = tmp.r;
     colors[i * 3 + 1] = tmp.g;
     colors[i * 3 + 2] = tmp.b;
@@ -123,21 +160,18 @@ export function createSummit() {
 }
 
 // Sculpted terrain: asymmetric crown + broken cliff band + ridged 45-degree
-// slope with play-along boulders + landing.
+// slope with play-along boulders + foothills + pines + winding path + landing.
 export function createMountain() {
   const mountain = new THREE.Group();
   mountain.name = 'mountain';
   const rand = mulberry32(20261028);
-  // Calm profile: 0 at rims so junctions stay clean, 1 mid-slope.
-  const calm = (y01) => Math.pow(Math.sin(Math.PI * THREE.MathUtils.clamp(y01, 0, 1)), 0.8);
 
   // Summit crown: natural asymmetric rocky knob (y 570 -> 600), calm flat top
   // ~32 m across where the gathering sits.
   const crownGeo = sculpt(
     new THREE.CylinderGeometry(16, 30, 30, 48, 6),
     rand, -15, 15,
-    (theta, y01) => 1 + (ridge(theta) - 0.45) * 0.14 * (0.25 + 0.75 * calm(y01)),
-    0x5c574f, 0x847d70
+    (theta, y01) => 1 + (ridge(theta) - 0.45) * 0.14 * (0.25 + 0.75 * calm01(y01))
   );
   const crown = new THREE.Mesh(crownGeo, rockMaterial());
   crown.position.y = SUMMIT_Y - 15;
@@ -148,25 +182,20 @@ export function createMountain() {
   const cliffGeo = sculpt(
     new THREE.CylinderGeometry(30.5, 33, 32, 48, 4),
     rand, -16, 16,
-    (theta) => 1 + (ridge(theta + 0.7) - 0.45) * 0.3,
-    0x4e4a44, 0x6e675e
+    (theta) => 1 + (ridge(theta + 0.7) - 0.45) * 0.3
   );
   const cliff = new THREE.Mesh(cliffGeo, rockMaterial());
   cliff.position.y = SUMMIT_Y - 41;
   mountain.add(cliff);
 
   // Main slope: ridged peak y 545 -> 0. Ridges fade near the tumble face so it
-  // stays a clean ~45-degree fall line; elsewhere buttresses and gullies vary
-  // the slope between roughly 38 and 52 degrees.
+  // stays a clean bare-rock ~45-degree fall line; elsewhere buttresses and
+  // gullies vary the slope between roughly 38 and 52 degrees.
   const slopeGeo = sculpt(
     new THREE.CylinderGeometry(30, 575, 545, 128, 32),
     rand, -272.5, 272.5,
-    (theta, y01) => {
-      const faceCalm = 0.15 + 0.85 * smoothstep(0.15, 0.7, angDiff(theta, FACE));
-      return 1 + (ridge(theta) - 0.45) * 0.38 * calm(y01) * faceCalm
-               + (rand() - 0.5) * 0.05 * calm(y01);
-    },
-    0x5c574f, 0x847d70
+    (theta, y01) => 1 + (ridge(theta) - 0.45) * 0.42 * calm01(y01) * faceCalm(theta)
+                      + (rand() - 0.5) * 0.015 * calm01(y01)
   );
   const slope = new THREE.Mesh(slopeGeo, rockMaterial());
   slope.position.y = 272.5;
@@ -181,7 +210,7 @@ export function createMountain() {
     const r = 575 - y;
     const bGeo = sculpt(
       new THREE.DodecahedronGeometry(s, 0),
-      bSeed, -s, s, () => 1 + (bSeed() - 0.5) * 0.35, 0x55514b, 0x7a746a
+      bSeed, -s, s, () => 1 + (bSeed() - 0.5) * 0.35
     );
     const b = new THREE.Mesh(bGeo, boulderMat);
     b.position.set(Math.cos(theta) * (r - s * sink), y, Math.sin(theta) * (r - s * sink));
@@ -194,6 +223,73 @@ export function createMountain() {
   }
   for (let i = 0; i < 4; i++) {
     putBoulder(bSeed() * Math.PI * 2, 60 + bSeed() * 420, 5 + bSeed() * 9, 0.4);
+  }
+
+  // Foothills: smaller rocky shoulders around the main peak for scale.
+  const hillSeed = mulberry32(913);
+  const hillAngles = [2.2, 3.4, 4.4, 5.6];
+  for (let i = 0; i < hillAngles.length; i++) {
+    const h = 90 + hillSeed() * 80;
+    const hr = 120 + hillSeed() * 80;
+    const dist = 500 + hillSeed() * 120;
+    const hGeo = sculpt(
+      new THREE.CylinderGeometry(hr * 0.25, hr, h, 32, 8),
+      hillSeed, -h / 2, h / 2,
+      (theta, y01) => 1 + (ridge(theta + i) - 0.45) * 0.4 * calm01(y01)
+    );
+    const hill = new THREE.Mesh(hGeo, rockMaterial());
+    hill.position.set(Math.cos(hillAngles[i]) * dist, h / 2, Math.sin(hillAngles[i]) * dist);
+    hill.receiveShadow = true;
+    mountain.add(hill);
+  }
+
+  // Pine trees for scale: dark-green pines on the slope edges and landing
+  // apron, sunk onto the analytic surface. Never on the tumble face.
+  const trunkGeo = new THREE.CylinderGeometry(0.5, 0.8, 4, 6);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3826 });
+  const coneMat = new THREE.MeshStandardMaterial({ color: 0x2d4a2d, flatShading: true });
+  const treeSpots = [];
+  const tSeed = mulberry32(551);
+  while (treeSpots.length < 44) {
+    const theta = tSeed() * Math.PI * 2;
+    if (angDiff(theta, FACE) < 0.75) continue;
+    const y = 5 + tSeed() * 325;
+    treeSpots.push({ theta, y, r: slopeRadius(theta, y), s: 1.2 + tSeed() * 1.0 });
+  }
+  for (let i = 0; i < 8; i++) {
+    const theta = tSeed() * Math.PI * 2;
+    if (angDiff(theta, FACE) < 0.5) continue;
+    treeSpots.push({ theta, y: 2, r: 590 + tSeed() * 40, s: 1.6 + tSeed() * 0.8 });
+  }
+  const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, treeSpots.length);
+  const coneGeo1 = new THREE.ConeGeometry(4, 7, 7);
+  const coneGeo2 = new THREE.ConeGeometry(2.8, 5, 7);
+  const coneMesh1 = new THREE.InstancedMesh(coneGeo1, coneMat, treeSpots.length);
+  const coneMesh2 = new THREE.InstancedMesh(coneGeo2, coneMat, treeSpots.length);
+  const m = new THREE.Matrix4();
+  treeSpots.forEach((t, i) => {
+    const x = Math.cos(t.theta) * t.r;
+    const z = Math.sin(t.theta) * t.r;
+    m.makeScale(t.s, t.s, t.s);
+    m.setPosition(x, t.y - 4 + 2 * t.s, z);
+    trunkMesh.setMatrixAt(i, m);
+    m.setPosition(x, t.y - 4 + 5.5 * t.s, z);
+    coneMesh1.setMatrixAt(i, m);
+    m.setPosition(x, t.y - 4 + 9 * t.s, z);
+    coneMesh2.setMatrixAt(i, m);
+  });
+  mountain.add(trunkMesh, coneMesh1, coneMesh2);
+
+  // Winding path: dusty switchback trail up the far side from the landing.
+  const pathMat = new THREE.MeshStandardMaterial({ color: 0x9a8a6e });
+  const stepGeo = new THREE.BoxGeometry(5, 0.6, 3);
+  for (let i = 0; i < 26; i++) {
+    const y = 4 + (i / 25) * 420;
+    const theta = PATH + 0.5 * Math.sin((i / 25) * Math.PI * 3);
+    const step = new THREE.Mesh(stepGeo, pathMat);
+    step.position.set(Math.cos(theta) * (slopeRadius(theta, y) + 1), y + 1, Math.sin(theta) * (slopeRadius(theta, y) + 1));
+    step.rotation.y = -theta;
+    mountain.add(step);
   }
 
   // Bottom landing: wide flat disc catching the slope foot, with look-back apron.
