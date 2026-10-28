@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { createAvatar } from './avatar.js';
-import { createCamera, attachReviewViews } from './camera.js';
+import { createCamera } from './camera.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -21,7 +21,6 @@ avatar.position.copy(summit.userData.playerStart);
 scene.add(avatar);
 
 const camera = createCamera(avatar);
-attachReviewViews(camera, avatar, scene); // TEMPORARY REVIEW ONLY (mountain-1)
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
