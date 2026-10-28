@@ -5,13 +5,13 @@ import * as THREE from 'three';
 // Third-person default camera. Placeholder: replaced by the camera set later.
 //
 // TEMPORARY REVIEW ONLY (mountain-1): frameWideView, frameLookbackView, and
-// attachReviewViews exist so the 300 m mountain can be reviewed. Remove before merge.
+// attachReviewViews exist so the 600 m mountain can be reviewed. Remove before merge.
 export function createCamera(avatar) {
   const camera = new THREE.PerspectiveCamera(
     60,
     window.innerWidth / window.innerHeight,
     0.1,
-    3000
+    4000
   );
   camera.name = 'third-person-camera';
   placeBehindAvatar(camera, avatar);
@@ -31,29 +31,36 @@ export function placeBehindAvatar(camera, avatar) {
   );
 }
 
-// TEMPORARY REVIEW ONLY: whole mountain in one frame from a distance.
+// TEMPORARY REVIEW ONLY: whole mountain in one frame.
+// Azimuth 135 deg is side-on to the chute (FACE = 45 deg), so the fall line,
+// flanking boulder walls, and dome breadth read in profile instead of
+// foreshortening into a wedge. Distance ~1370 m fits the 1200 m foot and the
+// 1400 m landing rim at FOV 60: summit ~14 deg off-axis, near rim ~28 deg
+// against a 30 deg vertical half-FOV.
 export function frameWideView(camera) {
-  camera.position.set(440, 360, 440);
-  camera.lookAt(0, 280, 0);
+  camera.position.set(-954.6, 500, 954.6);
+  camera.lookAt(0, 270, 0);
 }
 
-// TEMPORARY REVIEW ONLY: from the landing apron, looking back up at the summit.
+// TEMPORARY REVIEW ONLY: from the runout apron on the chute side, looking
+// back up the fall line at the boulders and the dome towering above.
 export function frameLookbackView(camera) {
-  camera.position.set(610, 12, 60);
-  camera.lookAt(0, 560, 0);
+  camera.position.set(500, 25, 500);
+  camera.lookAt(0, 450, 0);
 }
 
 // TEMPORARY REVIEW ONLY: keys 1/2/3 or tap cycle the three views.
-// Wide and look-back views relax the fog so the rock reads at distance;
-// the summit view restores it.
+// Whole mountain is the default so a plain reload shows the dome.
+// Review views keep the evening fog color with range extended for review
+// distance: scene fog 100-900 would swallow the mountain from ~1370 m.
 export function attachReviewViews(camera, avatar, scene) {
   const badge = document.getElementById('badge');
   const normalFog = scene.fog;
-  const clearFog = new THREE.Fog(0x87a5c4, 400, 2500);
+  const reviewFog = new THREE.Fog(0xeaa972, 500, 2600);
   const views = [
+    ['Whole mountain (-954.6, 500, 954.6) to (0, 270, 0)', () => { scene.fog = reviewFog; frameWideView(camera); }],
     ['Summit close-up', () => { scene.fog = normalFog; placeBehindAvatar(camera, avatar); }],
-    ['Whole mountain', () => { scene.fog = clearFog; frameWideView(camera); }],
-    ['Look-back from bottom', () => { scene.fog = clearFog; frameLookbackView(camera); }],
+    ['Look-back from bottom (500, 25, 500) to (0, 450, 0)', () => { scene.fog = reviewFog; frameLookbackView(camera); }],
   ];
   let i = 0;
   const show = (n) => {
