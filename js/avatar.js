@@ -18,7 +18,8 @@ export function createAvatar() {
   const bootMat = new THREE.MeshStandardMaterial({ color: 0x232323, roughness: 0.85 });
 
   // Face texture: cream base with painted eyes, sparkle, cheeks, and smile.
-  // The head keeps the phi sector around +z (u = 0.5 is face center).
+  // Canvas top is the sphere top (three.js sphere UVs store 1 - v), so eyes
+  // paint high, cheeks middle, smile low. No mirroring: smile stays a smile.
   function faceTexture() {
     const c = document.createElement('canvas');
     c.width = c.height = 256;
@@ -28,26 +29,26 @@ export function createAvatar() {
     g.fillStyle = '#2e2a26';
     for (const x of [104, 152]) {
       g.beginPath();
-      g.ellipse(x, 140, 11, 16, 0, 0, Math.PI * 2);
+      g.ellipse(x, 116, 11, 16, 0, 0, Math.PI * 2);
       g.fill();
     }
     g.fillStyle = '#ffffff';
     for (const x of [100, 148]) {
       g.beginPath();
-      g.arc(x, 134, 4, 0, Math.PI * 2);
+      g.arc(x, 110, 4, 0, Math.PI * 2);
       g.fill();
     }
     g.fillStyle = '#e88a8a';
     for (const x of [92, 164]) {
       g.beginPath();
-      g.arc(x, 112, 9, 0, Math.PI * 2);
+      g.arc(x, 144, 9, 0, Math.PI * 2);
       g.fill();
     }
     g.strokeStyle = '#2e2a26';
     g.lineWidth = 7;
     g.lineCap = 'round';
     g.beginPath();
-    g.arc(128, 90, 20, Math.PI * 0.15, Math.PI * 0.85);
+    g.arc(128, 150, 20, Math.PI * 0.15, Math.PI * 0.85);
     g.stroke();
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
