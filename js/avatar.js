@@ -32,19 +32,19 @@ export function createAvatar() {
     g.fillStyle = '#2e2a26';
     for (const x of [104, 152]) {
       g.beginPath();
-      g.ellipse(x, 146, 11, 16, 0, 0, Math.PI * 2);
+      g.ellipse(x, 138, 11, 16, 0, 0, Math.PI * 2);
       g.fill();
     }
     g.fillStyle = '#ffffff';
     for (const x of [100, 148]) {
       g.beginPath();
-      g.arc(x, 140, 4, 0, Math.PI * 2);
+      g.arc(x, 132, 4, 0, Math.PI * 2);
       g.fill();
     }
     g.fillStyle = '#e88a8a';
     for (const x of [92, 164]) {
       g.beginPath();
-      g.arc(x, 174, 9, 0, Math.PI * 2);
+      g.arc(x, 166, 9, 0, Math.PI * 2);
       g.fill();
     }
     const t = new THREE.CanvasTexture(c);
