@@ -20,8 +20,9 @@ export function createAvatar() {
 
   // Face texture: cream base with painted glossy eyes and rosy cheeks only.
   // No mouth: no smile arc, no cover story, just no mouth.
-  // Canvas top is the sphere top (three.js sphere UVs store 1 - v), so eyes
-  // paint high and even, cheeks middle and even on both sides.
+  // Canvas top is the sphere top (three.js sphere UVs store 1 - v), so larger
+  // canvas y sits lower on the visible face: eyes upper-middle and even,
+  // cheeks lower-middle and even on both sides.
   function faceTexture() {
     const c = document.createElement('canvas');
     c.width = c.height = 256;
@@ -31,19 +32,19 @@ export function createAvatar() {
     g.fillStyle = '#2e2a26';
     for (const x of [104, 152]) {
       g.beginPath();
-      g.ellipse(x, 116, 11, 16, 0, 0, Math.PI * 2);
+      g.ellipse(x, 146, 11, 16, 0, 0, Math.PI * 2);
       g.fill();
     }
     g.fillStyle = '#ffffff';
     for (const x of [100, 148]) {
       g.beginPath();
-      g.arc(x, 110, 4, 0, Math.PI * 2);
+      g.arc(x, 140, 4, 0, Math.PI * 2);
       g.fill();
     }
     g.fillStyle = '#e88a8a';
     for (const x of [92, 164]) {
       g.beginPath();
-      g.arc(x, 144, 9, 0, Math.PI * 2);
+      g.arc(x, 174, 9, 0, Math.PI * 2);
       g.fill();
     }
     const t = new THREE.CanvasTexture(c);
@@ -96,9 +97,11 @@ export function createAvatar() {
     avatar.add(shoulder);
   }
 
-  // Scarf: golden ring at the neck.
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.125, 0.045, 6, 14), gold);
-  ring.position.y = 0.9;
+  // Scarf: golden ring at the neck, tucked under the hood. The hood shell
+  // passes outside the ring's top edge all the way round, so the hood
+  // overlaps the scarf; the front gold arc stays visible below the chin.
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.115, 0.04, 6, 14), gold);
+  ring.position.y = 0.87;
   ring.rotation.x = Math.PI / 2;
   avatar.add(ring);
 
