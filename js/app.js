@@ -52,7 +52,7 @@ function doReset() {
   avatar.position.copy(spawn);
   avatar.quaternion.identity();
   placeBehindAvatar(camera, avatar);
-  setFacts(ui, fall.getState());
+  setFacts(ui, fall.getState(), camera);
   setButtonMode(ui, 'jump');
 }
 
@@ -118,19 +118,22 @@ renderer.setAnimationLoop(() => {
     // The body, the flail, and the chase camera do all the work.
     syncAvatarToBody();
     updateFallCamera(camera, avatar, dt, 'chase');
-  } else if (s.phase === 'landed') {
-    updateFallCamera(camera, avatar, dt, 'lookback');
   }
+  // Landed and idle hold whatever placeBehindAvatar set on transition: one
+  // camera writer per frame, never a fight, never fog.
 
   updateFlail(avatar, s, dt);
-  setFacts(ui, s);
+  setFacts(ui, s, camera);
   if (s.phase === 'landed' && prevPhase !== 'landed') {
     setButtonMode(ui, 'top');
+    placeBehindAvatar(camera, avatar);
   }
   if (s.phase === 'idle' && prevPhase === 'falling') {
     // Visible end (escape or time limit): the body is parked at launch with
-    // facts frozen. Park the avatar on it and offer a fresh Jump.
+    // facts frozen. Park the avatar on it, restore the summit view, and
+    // offer a fresh Jump. Never leave the player staring at fog.
     syncAvatarToBody();
+    placeBehindAvatar(camera, avatar);
     setButtonMode(ui, 'jump');
   }
   prevPhase = s.phase;

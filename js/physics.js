@@ -70,7 +70,7 @@ export function createFall(spawn) {
   const world = new CANNON.World({
     gravity: new CANNON.Vec3(0, GRAVITY, 0),
   });
-  world.broadphase = new CANNON.SAPBroadphase(world);
+  world.broadphase = new CANNON.NaiveBroadphase();
   world.allowSleep = false;
 
   const bodyMat = new CANNON.Material('avatar');
@@ -123,6 +123,23 @@ export function createFall(spawn) {
   body.linearDamping = 0.01;
   world.addBody(body);
 
+  // Runtime proof the spawn is clear: signed distance from LAUNCH_POS to
+  // every proxy plane, recomputed here in plain JS from the same normals and
+  // anchors used above. The readout shows the minimum gap; anything under
+  // the body radius means the spawn intersects rock and the launch is
+  // invalid on its face. Expected: main plane ~2.0, guides 14, foot/landing
+  // hundreds (behind/below, no contact).
+  function planeGap(n, q) {
+    return n.x * (LAUNCH_POS.x - q.x) + n.y * (LAUNCH_POS.y - q.y) + n.z * (LAUNCH_POS.z - q.z);
+  }
+  const spawnGap = Math.min(
+    planeGap({ x: er.x * 0.70710678, y: 0.70710678, z: er.z * 0.70710678 }, { x: 233.35, y: 300, z: 233.35 }),
+    planeGap({ x: er.x * 0.8944, y: 0.4472, z: er.z * 0.8944 }, { x: er.x * 570, y: 60, z: er.z * 570 }),
+    planeGap({ x: 0, y: 1, z: 0 }, { x: 0, y: 0.3, z: 0 }),
+    planeGap({ x: -et.x, y: 0, z: -et.z }, { x: et.x * GUIDE_HALF_WIDTH, y: 300, z: et.z * GUIDE_HALF_WIDTH }),
+    planeGap({ x: et.x, y: 0, z: et.z }, { x: -et.x * GUIDE_HALF_WIDTH, y: 300, z: -et.z * GUIDE_HALF_WIDTH })
+  );
+
   // Fall facts for later gods; no god code in this step.
   const facts = {
     phase: 'idle',
@@ -131,6 +148,7 @@ export function createFall(spawn) {
     strongest: 0,
     airtime: 0,
     resets: 0,
+    endReason: '—',
   };
   const lastImpact = { strength: 0, age: 99 };
   let settle = 0;
@@ -163,6 +181,7 @@ export function createFall(spawn) {
     facts.strongest = 0;
     facts.airtime = 0;
     facts.resets = 0;
+    facts.endReason = '—';
     lastImpact.strength = 0;
     lastImpact.age = 99;
     settle = 0;
@@ -177,19 +196,24 @@ export function createFall(spawn) {
     facts.strongest = 0;
     facts.airtime = 0;
     facts.resets = 0;
+    facts.endReason = '—';
     lastImpact.strength = 0;
     lastImpact.age = 99;
     settle = 0;
   }
 
   // Visible end: the fall STOPS here. Phase to idle, body parked at launch,
-  // facts frozen (kept, not cleared), resets counter incremented. The app
-  // parks the avatar on the body and flips the button to Jump. No silent
-  // continuation, ever.
-  function endFall() {
+  // facts frozen (kept, not cleared), resets counter incremented, and the
+  // reason written into the readout so the next failure names itself:
+  // oob-nan (non-finite state), oob-low (below the world), oob-far (left
+  // the proxies sideways), oob-high (left the world upward), timeout
+  // (35 s hard cap). The app parks the avatar on the body and flips the
+  // button to Jump. No silent continuation, ever.
+  function endFall(reason) {
     placeAt(LAUNCH_POS, { x: 0, y: 0, z: 0 });
     facts.phase = 'idle';
     facts.resets += 1;
+    facts.endReason = reason;
     settle = 0;
   }
 
@@ -212,15 +236,20 @@ export function createFall(spawn) {
       const speed = body.velocity.length();
       const r = Math.hypot(p.x, p.z);
       if (!Number.isFinite(p.x + p.y + p.z + speed)) {
-        endFall();
-      } else if (p.y < -30 || r > 1500 || p.y > 2000) {
-        endFall();
+        endFall('oob-nan');
+      } else if (p.y < -30) {
+        endFall('oob-low');
+      } else if (r > 1500) {
+        endFall('oob-far');
+      } else if (p.y > 2000) {
+        endFall('oob-high');
       } else if (facts.time > FALL_TIME_LIMIT) {
-        endFall();
+        endFall('timeout');
       } else if ((p.y < 3 && speed < 3) || (r > 595 && p.y < 8 && speed < 6)) {
         settle += dt;
         if (settle > 1.2) {
           facts.phase = 'landed';
+          facts.endReason = 'landed';
           body.velocity.set(0, 0, 0);
           body.angularVelocity.set(0, 0, 0);
         }
@@ -240,6 +269,8 @@ export function createFall(spawn) {
       strongest: facts.strongest,
       airtime: facts.airtime,
       resets: facts.resets,
+      endReason: facts.endReason,
+      spawnGap,
       pos: { x: p.x, y: p.y, z: p.z },
       r: Math.hypot(p.x, p.z),
       // Live motion for the avatar sync, the flail, and the readout.

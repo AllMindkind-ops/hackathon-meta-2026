@@ -107,6 +107,11 @@ export function updateFallCamera(camera, avatar, dt, mode) {
   const floor = terrainClearanceY(_desired.x, _desired.z);
   if (_desired.y < floor) _desired.y = floor;
   camera.position.lerp(_desired, 1 - Math.exp(-(mode === 'lookback' ? 2 : 3) * dt));
+  // The lerp path can sweep through rock on its way to a clamped endpoint
+  // (e.g. summit view to launch chase crosses the dome), so clamp the actual
+  // camera position too. The camera can never sit inside the mountain.
+  const rock = terrainClearanceY(camera.position.x, camera.position.z);
+  if (camera.position.y < rock) camera.position.y = rock;
   if (mode === 'lookback') {
     camera.lookAt(SUMMIT_LOOK);
   } else {
