@@ -11,6 +11,7 @@ import * as THREE from 'three';
 export function createAvatar() {
   const avatar = new THREE.Group();
   avatar.name = 'chibi-avatar';
+  avatar.userData.pivots = {};
 
   const suit = new THREE.MeshStandardMaterial({ color: 0x5b7d8a, roughness: 0.9 });
   const hoodMat = new THREE.MeshStandardMaterial({ color: 0x5b7d8a, roughness: 0.9, side: THREE.DoubleSide });
@@ -68,6 +69,7 @@ export function createAvatar() {
     const hip = new THREE.Group();
     hip.name = name;
     hip.position.set(x, 0.52, 0);
+    avatar.userData.pivots[name] = hip;
     const leg = new THREE.Mesh(legGeo, suit);
     leg.position.y = -0.21;
     hip.add(leg);
@@ -88,6 +90,7 @@ export function createAvatar() {
     shoulder.name = name;
     shoulder.position.set(x, 0.82, 0);
     shoulder.rotation.z = rest;
+    avatar.userData.pivots[name] = shoulder;
     const arm = new THREE.Mesh(armGeo, suit);
     arm.position.y = -0.17;
     shoulder.add(arm);
@@ -118,6 +121,7 @@ export function createAvatar() {
   const neck = new THREE.Group();
   neck.name = 'neck';
   neck.position.set(0, 0.88, 0);
+  avatar.userData.pivots.neck = neck;
   const head = new THREE.Mesh(
     new THREE.SphereGeometry(0.17, 8, 6, -0.4292, 4.0),
     skin
@@ -136,4 +140,101 @@ export function createAvatar() {
   avatar.add(neck);
 
   return avatar;
+}
+
+// Ridiculousness dial for the fall flail, pass 1. Default 1: solemn ≈ 0.35,
+// default 1, FUCK YES ≈ 2. It scales ONLY flail amplitude, spring, lag and
+// overshoot. It must never change gravity, impulse, friction, bounce,
+// terrain, path, or landing.
+export const flailConfig = { level: 1 };
+
+// Per-avatar flail memory: rest pose, lagged spin, fold spring.
+const flailMemory = new WeakMap();
+
+function flailMem(avatar) {
+  let m = flailMemory.get(avatar);
+  if (!m) {
+    const P = avatar.userData.pivots;
+    m = {
+      t: 0,
+      rest: {
+        neck: P.neck.rotation.clone(),
+        shoulderL: P.shoulderL.rotation.clone(),
+        shoulderR: P.shoulderR.rotation.clone(),
+        hipL: P.hipL.rotation.clone(),
+        hipR: P.hipR.rotation.clone(),
+      },
+      lag: { x: 0, y: 0, z: 0 },
+      fold: 0,
+      foldV: 0,
+    };
+    flailMemory.set(avatar, m);
+  }
+  return m;
+}
+
+// Procedural tumbling flail (presentation only): shoulders, hips and neck
+// rotate from the body's speed, spin, and impact pulses. Written baseline
+// from a group-fall reference: headfirst phases, cartwheels, limbs spread /
+// tucked / trailing, limbs lagging the body's turn, folding on impact and
+// rebounding after. Never one uniform windmill: each joint gets its own
+// phase offset, frequency, and lag.
+// st: { phase, speed, spin {x,y,z}, impact, airborne }. dt in seconds.
+export function updateFlail(avatar, st, dt) {
+  const P = avatar.userData.pivots;
+  if (!P) return;
+  const L = flailConfig.level;
+  const m = flailMem(avatar);
+  const dts = Math.min(Math.max(dt, 0), 0.05);
+  m.t += dts;
+
+  const falling = st.phase === 'falling';
+  const energy = falling ? Math.min(1, st.speed / 30) : 0;
+
+  // Lagged spin: joints trail the body's turn instead of matching it.
+  const lagRate = 3 / (0.6 + L);
+  const k = 1 - Math.exp(-lagRate * dts);
+  m.lag.x += (st.spin.x - m.lag.x) * k;
+  m.lag.y += (st.spin.y - m.lag.y) * k;
+  m.lag.z += (st.spin.z - m.lag.z) * k;
+
+  // Fold spring: impacts slam the limbs in, then rebound with overshoot.
+  const foldTarget = falling ? Math.min(1, (st.impact || 0) / 18) : 0;
+  const stiff = 26 + 30 * L;
+  const damp = 2 * Math.sqrt(stiff) * 0.35;
+  m.foldV += ((foldTarget - m.fold) * stiff - m.foldV * damp) * dts;
+  m.fold += m.foldV * dts;
+
+  const w = m.t * (3 + energy * 7);
+  const A = L * (0.15 + energy * 1.5);
+  const trail = st.airborne ? energy * 0.45 * L : 0;
+  const spinCouple = 0.06 * L;
+
+  const set = (joint, rest, x, y, z) => {
+    joint.rotation.set(rest.x + x, rest.y + y, rest.z + z);
+  };
+
+  // Cartwheel arms on opposite phases, spread/tuck on a slower cycle.
+  set(P.shoulderL, m.rest.shoulderL,
+    A * Math.sin(w) + m.lag.z * spinCouple - trail - m.fold * 0.7,
+    A * 0.5 * Math.sin(w * 0.5 + 1.1),
+    A * 0.6 * Math.sin(w * 0.5));
+  set(P.shoulderR, m.rest.shoulderR,
+    A * Math.sin(w + Math.PI) + m.lag.z * spinCouple - trail - m.fold * 0.7,
+    A * 0.5 * Math.sin(w * 0.5 + 2.4),
+    -A * 0.6 * Math.sin(w * 0.5 + 0.7));
+  // Legs bicycle, trail behind in the air, tuck hard on fold.
+  set(P.hipL, m.rest.hipL,
+    A * 0.8 * Math.sin(w * 0.9 + 2.1) - trail * 0.7 - m.fold * 1.0,
+    0,
+    A * 0.25 * Math.sin(w * 0.45 + 0.4));
+  set(P.hipR, m.rest.hipR,
+    A * 0.8 * Math.sin(w * 0.9 + 2.1 + Math.PI) - trail * 0.7 - m.fold * 1.0,
+    0,
+    -A * 0.25 * Math.sin(w * 0.45 + 1.8));
+  // Headfirst pitching with wobble; chin tucks on fold.
+  set(P.neck, m.rest.neck,
+    A * 0.6 * Math.sin(w * 0.7 + 1.3) + m.fold * 0.5 + m.lag.x * spinCouple,
+    A * 0.3 * Math.sin(w * 0.45 + 2.9),
+    A * 0.35 * Math.sin(w * 0.6 + 0.5) + m.lag.z * spinCouple * 0.5);
 }

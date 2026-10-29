@@ -3,19 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Summit — Base Scene</title>
+  <title>Summit — Fall loop pass 1</title>
   <link rel="stylesheet" href="./styles.css" />
   <script type="importmap">
     {
       "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
       }
     }
   </script>
 </head>
 <body>
   <canvas id="scene"></canvas>
-  <div id="badge">Base scene — summit start (placeholder)</div>
+  <div id="facts">PHASE IDLE</div>
+  <button id="jump" type="button">Jump</button>
   <script type="module" src="./js/app.js"></script>
 </body>
 </html>

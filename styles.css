@@ -13,14 +13,42 @@ html, body {
   touch-action: none;
 }
 
-#badge {
+/* Small phase/facts readout for testing, top-left. */
+#facts {
   position: fixed;
   left: 12px;
-  bottom: 12px;
-  font: 14px/1.4 system-ui, sans-serif;
+  top: 12px;
+  font: 13px/1.4 system-ui, sans-serif;
   color: #fff;
   background: rgba(0, 0, 0, 0.45);
   padding: 6px 10px;
   border-radius: 8px;
   pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Big Jump button, bottom-centre, touch-friendly. */
+#jump {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  min-width: 200px;
+  min-height: 64px;
+  font: 600 22px/1 system-ui, sans-serif;
+  color: #1a1206;
+  background: #e8a93d;
+  border: none;
+  border-radius: 16px;
+  padding: 16px 32px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  touch-action: manipulation;
+}
+
+#jump:disabled {
+  background: #8a7a5c;
+  color: #e8e2d4;
+  cursor: default;
+  box-shadow: none;
 }
