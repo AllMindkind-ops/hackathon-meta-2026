@@ -24,8 +24,11 @@ export function setButtonMode(ui, mode) {
   }
 }
 
+// Readout: phase, fall clock, impact count, strongest impact, airtime, body
+// cylindrical position (r, y), current speed, and visible-end resets.
 export function setFacts(ui, s) {
   ui.facts.textContent =
     `PHASE ${s.phase.toUpperCase()}  t=${s.time.toFixed(1)}s` +
-    `  hits=${s.impacts}  max=${s.strongest.toFixed(1)}m/s  air=${s.airtime.toFixed(1)}s`;
+    `  hits=${s.impacts}  max=${s.strongest.toFixed(1)}m/s  air=${s.airtime.toFixed(1)}s` +
+    `  r=${s.r.toFixed(1)} y=${s.pos.y.toFixed(1)} v=${s.speed.toFixed(1)}  resets=${s.resets}`;
 }

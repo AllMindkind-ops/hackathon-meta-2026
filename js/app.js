@@ -127,6 +127,12 @@ renderer.setAnimationLoop(() => {
   if (s.phase === 'landed' && prevPhase !== 'landed') {
     setButtonMode(ui, 'top');
   }
+  if (s.phase === 'idle' && prevPhase === 'falling') {
+    // Visible end (escape or time limit): the body is parked at launch with
+    // facts frozen. Park the avatar on it and offer a fresh Jump.
+    syncAvatarToBody();
+    setButtonMode(ui, 'jump');
+  }
   prevPhase = s.phase;
 
   renderer.render(scene, camera);

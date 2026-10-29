@@ -19,6 +19,35 @@ let chaseDistance = 12;
 const _desired = new THREE.Vector3();
 const _look = new THREE.Vector3();
 
+// Visual-terrain clearance for the fall camera (fix 1). The chase offset sits
+// inward and up of the avatar -- near the summit that point is INSIDE the
+// curved dome rock (dome surface at radial ~79 reaches y ~553+ridge while the
+// old desired point sat at y ~547), which strobed interior/exterior views.
+// The desired point is now clamped above a conservative terrain height built
+// from the same js/scene.js constants (dome cap + summit bowl, chute line,
+// runout, landing apron), with margin for the dome's sculpted ridges.
+const DOME_R = 90;
+const DOME_BASE = 510;
+const BOWL_R = 30;
+const BOWL_Y = 600;
+const CAM_CLEARANCE = 7;
+
+function chuteSurfaceY(r) {
+  if (r <= 570) return 630 - r;
+  if (r <= 600) return 60 - (r - 570) * 2;
+  return 0.3;
+}
+
+function terrainClearanceY(x, z) {
+  const r = Math.hypot(x, z);
+  let y = chuteSurfaceY(r);
+  if (r < DOME_R + 5) {
+    const dome = r < BOWL_R ? BOWL_Y : DOME_BASE + Math.sqrt(Math.max(0, DOME_R * DOME_R - r * r));
+    if (dome > y) y = dome;
+  }
+  return y + CAM_CLEARANCE;
+}
+
 export function setChaseDistance(d) {
   chaseDistance = THREE.MathUtils.clamp(d, 6, 24);
 }
@@ -56,9 +85,10 @@ export function placeBehindAvatar(camera, avatar) {
   );
 }
 
-// Fall camera. mode 'chase': back-and-up offset aligned to the chute,
-// smoothed with a lerp; the camera never rolls with the avatar's tumble.
+// Fall camera. mode 'chase': back-and-up offset aligned to the chute;
 // mode 'lookback': low and near the avatar, looking up at the summit.
+// Exactly one write path per frame: clamp above the visual rock, one lerp,
+// one lookAt. The camera never rolls with the avatar's tumble (up stays +Y).
 export function updateFallCamera(camera, avatar, dt, mode) {
   const d = chaseDistance;
   if (mode === 'lookback') {
@@ -67,16 +97,20 @@ export function updateFallCamera(camera, avatar, dt, mode) {
       avatar.position.y + 1.1,
       avatar.position.z - CHUTE_FZ * 4.5
     );
-    camera.position.lerp(_desired, 1 - Math.exp(-2 * dt));
-    camera.lookAt(SUMMIT_LOOK);
-    return;
+  } else {
+    _desired.set(
+      avatar.position.x - CHUTE_FX * d,
+      avatar.position.y + d * 0.5,
+      avatar.position.z - CHUTE_FZ * d
+    );
   }
-  _desired.set(
-    avatar.position.x - CHUTE_FX * d,
-    avatar.position.y + d * 0.5,
-    avatar.position.z - CHUTE_FZ * d
-  );
-  camera.position.lerp(_desired, 1 - Math.exp(-3 * dt));
-  _look.set(avatar.position.x, avatar.position.y + 1, avatar.position.z);
-  camera.lookAt(_look);
+  const floor = terrainClearanceY(_desired.x, _desired.z);
+  if (_desired.y < floor) _desired.y = floor;
+  camera.position.lerp(_desired, 1 - Math.exp(-(mode === 'lookback' ? 2 : 3) * dt));
+  if (mode === 'lookback') {
+    camera.lookAt(SUMMIT_LOOK);
+  } else {
+    _look.set(avatar.position.x, avatar.position.y + 1, avatar.position.z);
+    camera.lookAt(_look);
+  }
 }

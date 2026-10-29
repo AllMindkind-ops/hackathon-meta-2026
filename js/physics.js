@@ -1,16 +1,25 @@
 import * as CANNON from 'cannon-es';
 
-// Fall-loop physics, pass 1. ONE dynamic body (a sphere) carries the avatar.
-// The visual mountain in js/scene.js is never touched and never trimeshed:
-// the body collides with simplified INVISIBLE proxies aligned to the chute
-// constants read from that file:
+// Fall-loop physics, pass 1 (fix 1: spawn pocket removed). ONE dynamic body
+// (a sphere) carries the avatar. The visual mountain in js/scene.js is never
+// touched and never trimeshed: the body collides with simplified INVISIBLE
+// proxies aligned to the chute constants read from that file:
 //   SUMMIT_Y = 600, FACE = PI/4 (chute azimuth),
 //   chuteR(y) = 630 - y for y >= 60 (clean 45-degree chute),
 //   runout r = 570 + (60 - y) * 0.5 for y < 60,
 //   landing disc: radius 700, top surface at y = 0.3.
-// Proxies: a short steep plunge at the top, the main ~45-degree slope, a
-// steeper foot section, a flat landing plane, and gentle side guides that
-// keep the body in the chute.
+//
+// Root cause of the stuck fall (fixed here): the old build had TWO crossing
+// infinite planes at the spawn -- a steep plunge plane through (r=62, y=574)
+// and the main 45-degree plane -- intersecting along a line at (r=92, y=538),
+// about 1 m downslope of the launch (r=90.9, y=540.92), with only ~0.3 m of
+// spawn clearance over the plunge surface. The body could wedge/buzz between
+// the two planes instead of taking the slope (max speed pinned at launch
+// speed, hundreds of impacts, airtime inflating, phase stuck FALLING), and
+// the old silent auto-reset teleported it back to launch with the facts still
+// counting. Now there is exactly ONE slope plane at the top, the spawn sits
+// 2 m clear of it, the first contact is the slope after the launch arc, and
+// every auto-reset ENDS the fall visibly instead of looping silently.
 
 // Chute azimuth (radians around Y), same FACE as js/scene.js.
 export const CHUTE_AZIMUTH = Math.PI / 4;
@@ -25,13 +34,15 @@ export const SLOPE_RESTITUTION = 0.35;
 export const GUIDE_FRICTION = 0.1;
 export const GUIDE_RESTITUTION = 0.15;
 export const GUIDE_HALF_WIDTH = 14;
+// Hard termination: no fall runs longer than this, under any circumstances.
+export const FALL_TIME_LIMIT = 35;
 
-// Launch: top of the chute run (y = 540 -> r = 630 - 540 = 90), lifted along
-// the slope normal by one body radius plus clearance so it starts in air:
-// radial 90.9 -> x = z = 64.29, y = 540.92.
-export const LAUNCH_POS = { x: 64.29, y: 540.92, z: 64.29 };
+// Launch: top of the chute run (y = 540 -> r = 630 - 540 = 90), lifted 2.7 m
+// above the single 45-degree slope line so the body (r = 0.7) starts 2 m
+// clear of every proxy: radial 91.0 -> x = z = 64.35, y = 541.7.
+export const LAUNCH_POS = { x: 64.35, y: 541.7, z: 64.35 };
 // One outward impulse: ~5 m/s out along the fall line, ~3.5 m/s up, so the
-// body arcs off the rim, lands on the slope below, and starts tumbling.
+// body arcs off the rim and its first contact is the slope ~10 m down.
 export const LAUNCH_VEL = { x: 3.54, y: 3.5, z: 3.54 };
 
 function radialDir() {
@@ -77,17 +88,12 @@ export function createFall(spawn) {
   const er = radialDir();
   const et = sideDir();
 
-  // Main ~45-degree slope: surface y = 630 - r, normal (er + up) / sqrt(2),
-  // anchored mid-chute (r = 330 -> x = z = 233.35, y = 300).
+  // THE slope: one continuous 45-degree plane, surface y = 630 - r, normal
+  // (er + up) / sqrt(2), anchored mid-chute (r = 330 -> x = z = 233.35).
+  // It runs unbroken from above the launch to the slope foot, so there is no
+  // pocket, wedge, or crossing anywhere near the spawn.
   const mainN = new CANNON.Vec3(er.x * 0.70710678, 0.70710678, er.z * 0.70710678);
   staticPlane(world, slopeMat, mainN, new CANNON.Vec3(233.35, 300, 233.35));
-
-  // Short steep plunge at the top: dome rim (r = 62, y = 574) down to the
-  // chute top (r = 92, y = 538) at ~50 degrees, matching the visual drop
-  // from the summit bowl onto the fall line.
-  const plungeN = new CANNON.Vec3(er.x * 0.7688, 0.6407, er.z * 0.7688);
-  plungeN.unit(plungeN);
-  staticPlane(world, slopeMat, plungeN, new CANNON.Vec3(er.x * 62, 574, er.z * 62));
 
   // Steeper foot where the visual chute runout narrows (r = 570 -> 600 as
   // y = 60 -> 0, ~63 degrees), carrying the body onto the landing.
@@ -124,6 +130,7 @@ export function createFall(spawn) {
     impacts: 0,
     strongest: 0,
     airtime: 0,
+    resets: 0,
   };
   const lastImpact = { strength: 0, age: 99 };
   let settle = 0;
@@ -155,6 +162,7 @@ export function createFall(spawn) {
     facts.impacts = 0;
     facts.strongest = 0;
     facts.airtime = 0;
+    facts.resets = 0;
     lastImpact.strength = 0;
     lastImpact.age = 99;
     settle = 0;
@@ -168,15 +176,20 @@ export function createFall(spawn) {
     facts.impacts = 0;
     facts.strongest = 0;
     facts.airtime = 0;
+    facts.resets = 0;
     lastImpact.strength = 0;
     lastImpact.age = 99;
     settle = 0;
   }
 
-  // Escape hatch: a body that leaves the proxies or the world is put back
-  // at the launch with downslope speed; the run and its facts continue.
-  function autoReset() {
-    placeAt(LAUNCH_POS, { x: 4, y: -5.66, z: 4 });
+  // Visible end: the fall STOPS here. Phase to idle, body parked at launch,
+  // facts frozen (kept, not cleared), resets counter incremented. The app
+  // parks the avatar on the body and flips the button to Jump. No silent
+  // continuation, ever.
+  function endFall() {
+    placeAt(LAUNCH_POS, { x: 0, y: 0, z: 0 });
+    facts.phase = 'idle';
+    facts.resets += 1;
     settle = 0;
   }
 
@@ -199,9 +212,11 @@ export function createFall(spawn) {
       const speed = body.velocity.length();
       const r = Math.hypot(p.x, p.z);
       if (!Number.isFinite(p.x + p.y + p.z + speed)) {
-        autoReset();
+        endFall();
       } else if (p.y < -30 || r > 1500 || p.y > 2000) {
-        autoReset();
+        endFall();
+      } else if (facts.time > FALL_TIME_LIMIT) {
+        endFall();
       } else if ((p.y < 3 && speed < 3) || (r > 595 && p.y < 8 && speed < 6)) {
         settle += dt;
         if (settle > 1.2) {
@@ -217,13 +232,17 @@ export function createFall(spawn) {
   }
 
   function getState() {
+    const p = body.position;
     return {
       phase: facts.phase,
       time: facts.time,
       impacts: facts.impacts,
       strongest: facts.strongest,
       airtime: facts.airtime,
-      // Live motion for the avatar sync and the flail, pass 1.
+      resets: facts.resets,
+      pos: { x: p.x, y: p.y, z: p.z },
+      r: Math.hypot(p.x, p.z),
+      // Live motion for the avatar sync, the flail, and the readout.
       speed: body.velocity.length(),
       spin: { x: body.angularVelocity.x, y: body.angularVelocity.y, z: body.angularVelocity.z },
       airborne: facts.phase === 'falling' && !touching,
