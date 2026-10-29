@@ -1,7 +1,8 @@
 import * as CANNON from 'cannon-es';
+import * as THREE from 'three';
 
-// Fall-loop physics, pass 1 (fix 1: spawn pocket removed). ONE dynamic body
-// (a sphere) carries the avatar. The visual mountain in js/scene.js is never
+// Fall-loop physics, pass 1 (fix 2: finite colliders). ONE dynamic body (a
+// sphere) carries the avatar. The visual mountain in js/scene.js is never
 // touched and never trimeshed: the body collides with simplified INVISIBLE
 // proxies aligned to the chute constants read from that file:
 //   SUMMIT_Y = 600, FACE = PI/4 (chute azimuth),
@@ -9,17 +10,18 @@ import * as CANNON from 'cannon-es';
 //   runout r = 570 + (60 - y) * 0.5 for y < 60,
 //   landing disc: radius 700, top surface at y = 0.3.
 //
-// Root cause of the stuck fall (fixed here): the old build had TWO crossing
-// infinite planes at the spawn -- a steep plunge plane through (r=62, y=574)
-// and the main 45-degree plane -- intersecting along a line at (r=92, y=538),
-// about 1 m downslope of the launch (r=90.9, y=540.92), with only ~0.3 m of
-// spawn clearance over the plunge surface. The body could wedge/buzz between
-// the two planes instead of taking the slope (max speed pinned at launch
-// speed, hundreds of impacts, airtime inflating, phase stuck FALLING), and
-// the old silent auto-reset teleported it back to launch with the facts still
-// counting. Now there is exactly ONE slope plane at the top, the spawn sits
-// 2 m clear of it, the first contact is the slope after the launch arc, and
-// every auto-reset ENDS the fall visibly instead of looping silently.
+// Root cause of the instant endFall (fix 1 diagnostics proved it): the old
+// runout collider was an INFINITE one-sided plane through (r=570, y=60) with
+// normal (0.894 radial, 0.447 up). LAUNCH_POS sits at signed distance
+//   0.894*(91-570) + 0.447*(541.7-60) = -213.0
+// from it -- 213 m on its NEGATIVE side. A cannon-es Plane is infinite, so
+// the solver saw a 213 m penetration on the very first step and ejected the
+// body (oob-far within 0.4 s; the recorded 6.0 m/s impact is the launch
+// velocity projected on that plane's normal). Verified independently, twice.
+// Fix: every terrain-segment collider is now a FINITE thin box whose top
+// surface lies on the segment line. A body outside a box's region feels
+// nothing from it, so no plane can ever grab the body from hundreds of
+// metres behind its surface again. Infinite planes remain NOWHERE.
 
 // Chute azimuth (radians around Y), same FACE as js/scene.js.
 export const CHUTE_AZIMUTH = Math.PI / 4;
@@ -30,17 +32,23 @@ export const GRAVITY = -9.82;
 // Slope contact: enough grip to tumble, enough bounce to ping off the rock.
 export const SLOPE_FRICTION = 0.25;
 export const SLOPE_RESTITUTION = 0.35;
+// Landing contact: deader than the slope so the run settles into a slide-out.
+export const LAND_FRICTION = 0.4;
+export const LAND_RESTITUTION = 0.2;
 // Side guides stay gentle: low friction, soft bounce.
 export const GUIDE_FRICTION = 0.1;
 export const GUIDE_RESTITUTION = 0.15;
-export const GUIDE_HALF_WIDTH = 14;
+// Guide inner faces sit this far either side of the fall line.
+export const GUIDE_INNER = 14;
 // Hard termination: no fall runs longer than this, under any circumstances.
 export const FALL_TIME_LIMIT = 35;
 
-// Launch: top of the chute run (y = 540 -> r = 630 - 540 = 90), lifted 2.7 m
-// above the single 45-degree slope line so the body (r = 0.7) starts 2 m
-// clear of every proxy: radial 91.0 -> x = z = 64.35, y = 541.7.
-export const LAUNCH_POS = { x: 64.35, y: 541.7, z: 64.35 };
+// Launch: on the clean skirt chute BELOW the visual shoulder band
+// (shoulder rock spans y 534-576 with no chute mask, and swallows the old
+// r=91/y=542 launch; boulders all sit at y <= 500). Surface point
+// (r=100, y=530) lifted 2.7 m along the slope normal: x = z = 72.06,
+// y = 531.91, radial 101.9, body (r = 0.7) starting 2 m clear of the box.
+export const LAUNCH_POS = { x: 72.06, y: 531.91, z: 72.06 };
 // One outward impulse: ~5 m/s out along the fall line, ~3.5 m/s up, so the
 // body arcs off the rim and its first contact is the slope ~10 m down.
 export const LAUNCH_VEL = { x: 3.54, y: 3.5, z: 3.54 };
@@ -53,16 +61,49 @@ function sideDir() {
   return new CANNON.Vec3(-Math.sin(CHUTE_AZIMUTH), 0, Math.cos(CHUTE_AZIMUTH));
 }
 
-function staticPlane(world, material, normal, point) {
+// Box collider descriptor: centre, orientation (THREE quaternion from an
+// orthonormal basis: local Y = surface normal, local Z = downslope tangent,
+// local X = Y cross Z), half extents. Top face (local +Y) lies on the
+// segment line; the solid extends below it.
+function solidBox(world, material, desc) {
   const b = new CANNON.Body({
     mass: 0,
     material,
-    shape: new CANNON.Plane(),
+    shape: new CANNON.Box(new CANNON.Vec3(desc.h.x, desc.h.y, desc.h.z)),
   });
-  b.quaternion.setFromVectors(new CANNON.Vec3(0, 0, 1), normal);
-  b.position.set(point.x, point.y, point.z);
+  b.position.set(desc.c.x, desc.c.y, desc.c.z);
+  b.quaternion.set(desc.q.x, desc.q.y, desc.q.z, desc.q.w);
   world.addBody(b);
   return b;
+}
+
+function basisQuat(n, t) {
+  const yA = new THREE.Vector3(n.x, n.y, n.z).normalize();
+  const zA = new THREE.Vector3(t.x, t.y, t.z).normalize();
+  const xA = new THREE.Vector3().crossVectors(yA, zA).normalize();
+  // Re-orthogonalise z against the (already perpendicular) pair.
+  const zB = new THREE.Vector3().crossVectors(xA, yA).normalize();
+  const q = new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(xA, yA, zB)
+  );
+  return { x: q.x, y: q.y, z: q.z, w: q.w };
+}
+
+// Signed clearance from a point to a box solid (negative = penetration
+// depth). Proves at runtime that the spawn sits outside every solid.
+const _bv = new THREE.Vector3();
+const _bq = new THREE.Quaternion();
+function boxClearance(desc, p) {
+  _bv.set(p.x - desc.c.x, p.y - desc.c.y, p.z - desc.c.z);
+  _bq.set(desc.q.x, desc.q.y, desc.q.z, desc.q.w).invert();
+  _bv.applyQuaternion(_bq);
+  const qx = Math.abs(_bv.x) - desc.h.x;
+  const qy = Math.abs(_bv.y) - desc.h.y;
+  const qz = Math.abs(_bv.z) - desc.h.z;
+  const ox = Math.max(qx, 0), oy = Math.max(qy, 0), oz = Math.max(qz, 0);
+  const outside = Math.sqrt(ox * ox + oy * oy + oz * oz);
+  const inside = Math.min(Math.max(qx, Math.max(qy, qz)), 0);
+  return outside + inside;
 }
 
 // Spawn is summit.userData.playerStart: the avatar idles there until Jump.
@@ -75,10 +116,15 @@ export function createFall(spawn) {
 
   const bodyMat = new CANNON.Material('avatar');
   const slopeMat = new CANNON.Material('slope');
+  const landMat = new CANNON.Material('landing');
   const guideMat = new CANNON.Material('guide');
   world.addContactMaterial(new CANNON.ContactMaterial(bodyMat, slopeMat, {
     friction: SLOPE_FRICTION,
     restitution: SLOPE_RESTITUTION,
+  }));
+  world.addContactMaterial(new CANNON.ContactMaterial(bodyMat, landMat, {
+    friction: LAND_FRICTION,
+    restitution: LAND_RESTITUTION,
   }));
   world.addContactMaterial(new CANNON.ContactMaterial(bodyMat, guideMat, {
     friction: GUIDE_FRICTION,
@@ -87,31 +133,69 @@ export function createFall(spawn) {
 
   const er = radialDir();
   const et = sideDir();
+  const erT = { x: er.x, y: 0, z: er.z };
+  const etT = { x: et.x, y: 0, z: et.z };
 
-  // THE slope: one continuous 45-degree plane, surface y = 630 - r, normal
-  // (er + up) / sqrt(2), anchored mid-chute (r = 330 -> x = z = 233.35).
-  // It runs unbroken from above the launch to the slope foot, so there is no
-  // pocket, wedge, or crossing anywhere near the spawn.
-  const mainN = new CANNON.Vec3(er.x * 0.70710678, 0.70710678, er.z * 0.70710678);
-  staticPlane(world, slopeMat, mainN, new CANNON.Vec3(233.35, 300, 233.35));
+  // THE slope: one box from (r=80, y=550) to (r=570, y=60) along the
+  // 45-degree line y = 630 - r. No pocket, wedge, or crossing anywhere.
+  const slopeN = { x: erT.x * 0.70710678, y: 0.70710678, z: erT.z * 0.70710678 };
+  const slopeT = { x: erT.x * 0.70710678, y: -0.70710678, z: erT.z * 0.70710678 };
+  const slopeMid = { x: erT.x * 325 - slopeN.x, y: 305 - slopeN.y, z: erT.z * 325 - slopeN.z };
+  const slopeBox = {
+    name: 'SLOPE',
+    c: slopeMid,
+    q: basisQuat(slopeN, slopeT),
+    h: { x: 16, y: 1, z: 346.48 },
+  };
+  solidBox(world, slopeMat, slopeBox);
 
-  // Steeper foot where the visual chute runout narrows (r = 570 -> 600 as
-  // y = 60 -> 0, ~63 degrees), carrying the body onto the landing.
-  const footN = new CANNON.Vec3(er.x * 0.8944, 0.4472, er.z * 0.8944);
-  footN.unit(footN);
-  staticPlane(world, slopeMat, footN, new CANNON.Vec3(er.x * 570, 60, er.z * 570));
+  // Steeper runout box from (r=570, y=60) to (r=600, y=0), meeting the slope
+  // box exactly at (r=570, y=60): continuous kink, no step, no gap.
+  const footN = { x: erT.x * 0.8944, y: 0.4472, z: erT.z * 0.8944 };
+  const footT = { x: erT.x * 0.4472, y: -0.8944, z: erT.z * 0.4472 };
+  const footMid = { x: erT.x * 585 - footN.x, y: 30 - footN.y, z: erT.z * 585 - footN.z };
+  const footBox = {
+    name: 'FOOT',
+    c: footMid,
+    q: basisQuat(footN, footT),
+    h: { x: 16, y: 1, z: 33.54 },
+  };
+  solidBox(world, slopeMat, footBox);
 
-  // Flat landing plane at the landing disc top (y = 0.3).
-  staticPlane(world, slopeMat, new CANNON.Vec3(0, 1, 0), new CANNON.Vec3(0, 0.3, 0));
+  // Flat landing box, top at the landing disc top (y = 0.3), 6 thick so the
+  // steep runout exit cannot tunnel through it.
+  const landBox = {
+    name: 'LAND',
+    c: { x: 0, y: -2.7, z: 0 },
+    q: { x: 0, y: 0, z: 0, w: 1 },
+    h: { x: 700, y: 3, z: 700 },
+  };
+  solidBox(world, landMat, landBox);
 
-  // Gentle side guides: vertical planes parallel to the fall line, centred
-  // on the chute, keeping the body from wandering off the fall line.
-  staticPlane(world, guideMat,
-    new CANNON.Vec3(-et.x, 0, -et.z),
-    new CANNON.Vec3(et.x * GUIDE_HALF_WIDTH, 300, et.z * GUIDE_HALF_WIDTH));
-  staticPlane(world, guideMat,
-    new CANNON.Vec3(et.x, 0, et.z),
-    new CANNON.Vec3(-et.x * GUIDE_HALF_WIDTH, 300, -et.z * GUIDE_HALF_WIDTH));
+  // Guide walls: vertical boxes flanking the chute, inner faces at lateral
+  // ±14, spanning r 80-600 and y 0-600. Finite: past their ends (or above
+  // them, impossible) the body simply feels nothing.
+  const guideBoxes = [];
+  for (const side of [1, -1]) {
+    const gc = {
+      x: erT.x * 340 + etT.x * side * (GUIDE_INNER + 2),
+      y: 300,
+      z: erT.z * 340 + etT.z * side * (GUIDE_INNER + 2),
+    };
+    // -45-degree yaw about Y maps local +X to +er (fall line) and local +Z
+    // to et (lateral): length runs in X, thickness in Z, height in Y.
+    const gq = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 4);
+    const guideBox = {
+      name: side > 0 ? 'GUIDE-A' : 'GUIDE-B',
+      c: gc,
+      q: { x: gq.x, y: gq.y, z: gq.z, w: gq.w },
+      h: { x: 260, y: 300, z: 2 },
+    };
+    solidBox(world, guideMat, guideBox);
+    guideBoxes.push(guideBox);
+  }
+
+  const boxes = [slopeBox, footBox, landBox, ...guideBoxes];
 
   const body = new CANNON.Body({
     mass: 1,
@@ -122,23 +206,6 @@ export function createFall(spawn) {
   body.angularDamping = 0.05;
   body.linearDamping = 0.01;
   world.addBody(body);
-
-  // Runtime proof the spawn is clear: signed distance from LAUNCH_POS to
-  // every proxy plane, recomputed here in plain JS from the same normals and
-  // anchors used above. The readout shows the minimum gap; anything under
-  // the body radius means the spawn intersects rock and the launch is
-  // invalid on its face. Expected: main plane ~2.0, guides 14, foot/landing
-  // hundreds (behind/below, no contact).
-  function planeGap(n, q) {
-    return n.x * (LAUNCH_POS.x - q.x) + n.y * (LAUNCH_POS.y - q.y) + n.z * (LAUNCH_POS.z - q.z);
-  }
-  const spawnGap = Math.min(
-    planeGap({ x: er.x * 0.70710678, y: 0.70710678, z: er.z * 0.70710678 }, { x: 233.35, y: 300, z: 233.35 }),
-    planeGap({ x: er.x * 0.8944, y: 0.4472, z: er.z * 0.8944 }, { x: er.x * 570, y: 60, z: er.z * 570 }),
-    planeGap({ x: 0, y: 1, z: 0 }, { x: 0, y: 0.3, z: 0 }),
-    planeGap({ x: -et.x, y: 0, z: -et.z }, { x: et.x * GUIDE_HALF_WIDTH, y: 300, z: et.z * GUIDE_HALF_WIDTH }),
-    planeGap({ x: et.x, y: 0, z: et.z }, { x: -et.x * GUIDE_HALF_WIDTH, y: 300, z: -et.z * GUIDE_HALF_WIDTH })
-  );
 
   // Fall facts for later gods; no god code in this step.
   const facts = {
@@ -217,6 +284,14 @@ export function createFall(spawn) {
     settle = 0;
   }
 
+  // Per-box spawn clearance, recomputed live: signed distance from the body
+  // centre to each solid minus the body radius. Negative means inside rock.
+  function gapsAt(p) {
+    const g = {};
+    for (const b of boxes) g[b.name] = boxClearance(b, p) - BODY_RADIUS;
+    return g;
+  }
+
   function step(dt) {
     if (facts.phase === 'falling') {
       world.step(1 / 60, dt, 3);
@@ -270,7 +345,7 @@ export function createFall(spawn) {
       airtime: facts.airtime,
       resets: facts.resets,
       endReason: facts.endReason,
-      spawnGap,
+      gaps: gapsAt({ x: p.x, y: p.y, z: p.z }),
       pos: { x: p.x, y: p.y, z: p.z },
       r: Math.hypot(p.x, p.z),
       // Live motion for the avatar sync, the flail, and the readout.

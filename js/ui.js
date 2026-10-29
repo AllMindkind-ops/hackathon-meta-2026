@@ -26,14 +26,17 @@ export function setButtonMode(ui, mode) {
 
 // Readout: phase, fall clock, impact count, strongest impact, airtime, body
 // cylindrical position (r, y), current speed, visible-end resets, how the
-// fall ended, spawn clearance proof, and camera position.
+// fall ended, per-collider spawn clearance proof, and camera position.
 export function setFacts(ui, s, camera) {
   const cam = camera
     ? `  cam=${camera.position.x.toFixed(1)},${camera.position.y.toFixed(1)},${camera.position.z.toFixed(1)}`
     : '';
+  const g = s.gaps;
+  const f1 = (v) => (v < 0 ? '' : '+') + (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2));
   ui.facts.textContent =
     `PHASE ${s.phase.toUpperCase()}  t=${s.time.toFixed(1)}s` +
     `  hits=${s.impacts}  max=${s.strongest.toFixed(1)}m/s  air=${s.airtime.toFixed(1)}s` +
     `  r=${s.r.toFixed(1)} y=${s.pos.y.toFixed(1)} v=${s.speed.toFixed(1)}` +
-    `  resets=${s.resets} end=${s.endReason} gap=${s.spawnGap.toFixed(2)}${cam}`;
+    `  gaps=M${f1(g.SLOPE)}/F${f1(g.FOOT)}/L${f1(g.LAND)}/A${f1(g['GUIDE-A'])}/B${f1(g['GUIDE-B'])}` +
+    `  resets=${s.resets} end=${s.endReason}${cam}`;
 }
