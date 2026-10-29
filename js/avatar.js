@@ -3,8 +3,9 @@ import * as THREE from 'three';
 // FROZEN CONTRACT: keep createAvatar() -> THREE.Group with origin at the feet.
 // app.js places it at summit.userData.playerStart.
 // Chibi humanoid (~1.3 m tall) in a one-color snow suit with a fluffy hood:
-// big head with the back truncated (the hood hides it), painted face texture,
-// golden scarf and gloves, black boots. Gender-neutral, no hair.
+// the hood is the main character of the head: a big shell with a fat cream
+// trim ring framing a ROUND face opening, painted face texture recessed
+// inside, golden scarf and gloves, black boots. Gender-neutral, no hair.
 // Named pivots (neck, shoulderL/R, hipL/R) for a later ragdoll stage;
 // no physics or steering wiring here.
 export function createAvatar() {
@@ -17,9 +18,10 @@ export function createAvatar() {
   const gold = new THREE.MeshStandardMaterial({ color: 0xe8a93d, roughness: 0.8 });
   const bootMat = new THREE.MeshStandardMaterial({ color: 0x232323, roughness: 0.85 });
 
-  // Face texture: cream base with painted eyes, sparkle, cheeks, and smile.
+  // Face texture: cream base with painted glossy eyes and rosy cheeks only.
+  // No mouth: no smile arc, no cover story, just no mouth.
   // Canvas top is the sphere top (three.js sphere UVs store 1 - v), so eyes
-  // paint high, cheeks middle, smile low. No mirroring: smile stays a smile.
+  // paint high and even, cheeks middle and even on both sides.
   function faceTexture() {
     const c = document.createElement('canvas');
     c.width = c.height = 256;
@@ -44,12 +46,6 @@ export function createAvatar() {
       g.arc(x, 144, 9, 0, Math.PI * 2);
       g.fill();
     }
-    g.strokeStyle = '#2e2a26';
-    g.lineWidth = 7;
-    g.lineCap = 'round';
-    g.beginPath();
-    g.arc(128, 150, 20, Math.PI * 0.15, Math.PI * 0.85);
-    g.stroke();
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
@@ -106,25 +102,32 @@ export function createAvatar() {
   ring.rotation.x = Math.PI / 2;
   avatar.add(ring);
 
-  // Head: neck pivot. Front sector kept around +z, back truncated (the hood
-  // covers it). Hood shell sits over the back with a face opening; fluffy
-  // trim rings the opening and breaks the round silhouette.
+  // Head: neck pivot. The face is a small sphere recessed inside the hood,
+  // smaller than the hood and trim around it; its front pole sits behind the
+  // trim's front plane. Front sector kept around +z, back truncated (hidden
+  // inside the hood). The face is the painted canvas texture only: there are
+  // no separate eye or cheek meshes.
+  // Hood: big slate-blue shell over the back with a front opening. It stops
+  // short of the poles (thetaStart/thetaLength), so the opening edge is made
+  // of smooth arcs: no diamond, cat-eye, or pointed top-and-chin shape.
+  // Trim: a bigger, fatter cream torus. It is a perfect circle, so it frames
+  // a ROUND face opening, buries the shell's front rim, and reads fluffy.
   const neck = new THREE.Group();
   neck.name = 'neck';
   neck.position.set(0, 0.88, 0);
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.2, 8, 6, -0.4292, 4.0),
+    new THREE.SphereGeometry(0.17, 8, 6, -0.4292, 4.0),
     skin
   );
-  head.position.y = 0.2;
+  head.position.set(0, 0.2, -0.03);
   neck.add(head);
   const hood = new THREE.Mesh(
-    new THREE.SphereGeometry(0.235, 10, 8, Math.PI / 2 + 1.13, Math.PI * 2 - 2.26),
+    new THREE.SphereGeometry(0.25, 10, 6, Math.PI / 2 + 1.05, Math.PI * 2 - 2.1, 0.5, 2.05),
     hoodMat
   );
   hood.position.y = 0.2;
   neck.add(hood);
-  const trimRing = new THREE.Mesh(new THREE.TorusGeometry(0.213, 0.032, 5, 12), trim);
+  const trimRing = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.065, 8, 10), trim);
   trimRing.position.set(0, 0.2, 0.1);
   neck.add(trimRing);
   avatar.add(neck);
