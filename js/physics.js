@@ -22,25 +22,24 @@ import * as THREE from 'three';
 export const CHUTE_AZIMUTH = Math.PI / 4;
 // Avatar proxy: one sphere body, pass 1 (no multi-body ragdoll).
 export const BODY_RADIUS = 0.7;
-// Retuned for a slow cruise with bounce rhythm (fix 6): lighter gravity for
-// floatier air, moderate slope friction so it skids and tumbles instead of
-// rolling smooth, lively slope restitution for visible hops, linear damping
-// as the top-speed governor (terminal ~15 m/s: a ~= 5.5*0.707*0.55 = 2.14,
-// v_term = a/d = 2.14/0.13). The steep runout gets its own grabby material
-// so the 63-degree foot brakes instead of re-accelerating. Rolling
-// resistance: angular damping rises while touching so the ball tumbles and
-// skids in bursts instead of pure-rolling. Predicted: ~14 at r=200,
-// ~16 at r=400, ~16 at the foot exit, ~55-60 s down, dozens of bounces.
+// Retuned for a slow cruise with bounce rhythm: lighter gravity for floatier
+// air, moderate slope friction so it skids and tumbles instead of rolling
+// smooth, lively slope restitution for visible hops, linear damping as the
+// top-speed governor, grabby foot material so the 63-degree foot brakes
+// instead of re-accelerating. (Fix 7: angular-damping-while-touching
+// reverted -- it sedated the roll. Damping is constant again; the only
+// delta vs 1.5 is linear 0.1 -> 0.12.)
 export const GRAVITY = -5.5;
 // Slope contact: skiddy enough to tumble, bouncy enough to leave the rock.
 export const SLOPE_FRICTION = 0.45;
 export const SLOPE_RESTITUTION = 0.6;
-// Rolling resistance while touching (always < 1: cannon-es damps with
-// Math.pow(1-d, dt)); recovers to the air value on separation.
-export const TOUCH_ANG_DAMP = 0.6;
-export const AIR_ANG_DAMP = 0.08;
-// Velocity governor: slopes terminal ~= 15 m/s and holds it.
-export const CRUISE_LIN_DAMP = 0.13;
+// Damping, pass 6 reverted: angular damping 0.6 while touching turned the
+// roll into a crawl (a rolling sphere's spin IS its motion). Constant 0.08
+// everywhere; linear 0.12 as the whole roll cap (was 0.1 in 1.5).
+// Predicted: slope terminal ~17.8 m/s, ~14 at r=200, ~17 at r=400,
+// ~18 at the foot exit, ~50-56 s down.
+export const ANG_DAMP = 0.08;
+export const LIN_DAMP = 0.12;
 // Steep runout contact: deliberately grabby + dead bounce so the foot acts
 // as a brake pad instead of re-accelerating: caps peak speed at ~21-22 m/s
 // on exit (the 60 m foot drop otherwise floors the peak near 26).
@@ -65,7 +64,7 @@ export const ZONE_SETTLE_SPEED = 3;
 export const ZONE_SETTLE_TIME = 0.5;
 export const ZONE_MAX_TIME = 2.5;
 // Hard termination: no fall runs longer than this, under any circumstances.
-export const FALL_TIME_LIMIT = 90;
+export const FALL_TIME_LIMIT = 75;
 // Launch radial: surface height is sampled from the visible profile, plus
 // clearance straight up (provable 2 m skin clearance whatever the local dip).
 export const LAUNCH_R = 102;
@@ -283,8 +282,8 @@ export function createFall(spawn, scenery) {
     shape: new CANNON.Sphere(BODY_RADIUS),
   });
   body.position.set(spawn.x, spawn.y, spawn.z);
-  body.angularDamping = AIR_ANG_DAMP;
-  body.linearDamping = CRUISE_LIN_DAMP;
+  body.angularDamping = ANG_DAMP;
+  body.linearDamping = LIN_DAMP;
   world.addBody(body);
 
   // Fall facts for later gods; no god code in this step.
@@ -322,8 +321,8 @@ export function createFall(spawn, scenery) {
   function placeAt(pos, vel) {
     body.position.set(pos.x, pos.y, pos.z);
     body.velocity.set(vel.x, vel.y, vel.z);
-    body.angularDamping = AIR_ANG_DAMP;
-    body.linearDamping = CRUISE_LIN_DAMP;
+    body.angularDamping = ANG_DAMP;
+    body.linearDamping = LIN_DAMP;
     body.angularVelocity.set(0, 0, 0);
     body.quaternion.set(0, 0, 0, 1);
   }
@@ -403,9 +402,6 @@ export function createFall(spawn, scenery) {
           break;
         }
       }
-      // Rolling resistance: damp the spin while in contact so the ball
-      // tumbles and skids in bursts instead of pure-rolling; recover in air.
-      body.angularDamping = touching ? TOUCH_ANG_DAMP : AIR_ANG_DAMP;
       if (!touching) {
         facts.airtime += dt;
         airSinceContact += dt;

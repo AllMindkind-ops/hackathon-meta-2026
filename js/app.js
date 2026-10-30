@@ -10,7 +10,7 @@ import { createScene } from './scene.js';
 import { createAvatar, updateFlail } from './avatar.js';
 import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance, snapChaseCamera, kickCamera } from './camera.js';
 import { CHUTE_AZIMUTH } from './physics.js';
-import { createFall, BODY_RADIUS } from './physics.js';
+import { createFall } from './physics.js';
 import { getUI, setButtonMode, setFacts } from './ui.js';
 
 const canvas = document.getElementById('scene');
@@ -33,11 +33,18 @@ const fall = createFall(spawn, mountain);
 const ui = getUI();
 setButtonMode(ui, 'jump');
 
+const _off = new THREE.Vector3();
 function syncAvatarToBody() {
+  // Centre pivot while falling ONLY: the 1.3 m avatar sits concentrically
+  // inside the 0.7 m body sphere (half-height 0.65 < 0.7) and turns about the
+  // body's centre, so flips clear the surface by construction instead of
+  // sweeping the head through rock. Idle and landed keep the plain
+  // feet-on-ground origin the createAvatar() contract promises.
+  _off.set(0, 0.65, 0).applyQuaternion(fall.body.quaternion);
   avatar.position.set(
-    fall.body.position.x,
-    fall.body.position.y - BODY_RADIUS,
-    fall.body.position.z
+    fall.body.position.x - _off.x,
+    fall.body.position.y - _off.y,
+    fall.body.position.z - _off.z
   );
   avatar.quaternion.copy(fall.body.quaternion);
 }

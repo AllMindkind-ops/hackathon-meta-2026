@@ -10,6 +10,9 @@ import * as THREE from 'three';
 // look-back view align to the fall line, never to the avatar's tumble.
 const CHUTE_FX = Math.cos(Math.PI / 4);
 const CHUTE_FZ = Math.sin(Math.PI / 4);
+// Lateral (one consistent side) for the chase offset below.
+const CHUTE_LX = -Math.sin(Math.PI / 4);
+const CHUTE_LZ = Math.cos(Math.PI / 4);
 // Summit point the look-back view aims at after landing.
 const SUMMIT_LOOK = new THREE.Vector3(0, 590, 0);
 
@@ -121,10 +124,14 @@ export function updateFallCamera(camera, avatar, dt, mode, vel) {
       avatar.position.z - CHUTE_FZ * 4.5
     );
   } else {
+    // Behind-and-to-one-side: riding straight down the fall line flattens
+    // the slope into a texture backdrop, so the follow sits lateral by a
+    // third of the zoom distance. The avatar stays framed against the
+    // mountainside's profile with sky in view; hits read against rock.
     _desired.set(
-      _anchor.x - CHUTE_FX * d,
+      _anchor.x - CHUTE_FX * d + CHUTE_LX * d / 3,
       _anchor.y + d * 0.5 - 1,
-      _anchor.z - CHUTE_FZ * d
+      _anchor.z - CHUTE_FZ * d + CHUTE_LZ * d / 3
     );
   }
   const floor = terrainClearanceY(_desired.x, _desired.z);
@@ -184,9 +191,9 @@ export function snapChaseCamera(camera, avatar, vel) {
     _anchor.addScaledVector(_vel.set(vel.x, vel.y, vel.z), 0.4);
   }
   camera.position.set(
-    _anchor.x - CHUTE_FX * d,
+    _anchor.x - CHUTE_FX * d + CHUTE_LX * d / 3,
     _anchor.y + d * 0.5 - 1,
-    _anchor.z - CHUTE_FZ * d
+    _anchor.z - CHUTE_FZ * d + CHUTE_LZ * d / 3
   );
   const rock = terrainClearanceY(camera.position.x, camera.position.z);
   if (camera.position.y < rock) camera.position.y = rock;
