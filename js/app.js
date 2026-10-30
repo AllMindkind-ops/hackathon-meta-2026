@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { createAvatar, updateFlail } from './avatar.js';
-import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance, snapChaseCamera, kickCamera } from './camera.js';
+import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance, snapChaseCamera, kickCamera, setFallProfile } from './camera.js';
 import { CHUTE_AZIMUTH } from './physics.js';
 import { createFall } from './physics.js';
 import { getUI, setButtonMode, setFacts } from './ui.js';
@@ -30,6 +30,8 @@ const camera = createCamera(avatar);
 
 const mountain = scene.getObjectByName('mountain');
 const fall = createFall(spawn, mountain);
+// The camera standoff rule measures the same sampled heights the colliders ride.
+setFallProfile(fall.profile);
 const ui = getUI();
 setButtonMode(ui, 'jump');
 

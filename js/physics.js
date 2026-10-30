@@ -133,7 +133,14 @@ function sampleProfile(raycaster, meshes, er) {
   const dir = new THREE.Vector3(0, -1, 0);
   const origin = new THREE.Vector3();
   const pts = [];
-  for (let r = 90; r <= 570; r += 24) pts.push(r);
+  // Fix 8: 8 m spacing (was 24). A sphere rolling on 24 m colinear planks
+  // has no normal velocity for restitution to return, so the mid-slope
+  // stayed glued (bn frozen, gap pinned). At 8 m the sampled kinks -- ring
+  // joints every ~17 m in y, vertex jitter to +/-0.36 m downslope, mesh
+  // transitions -- survive into the collision surface as 2-5 deg kinks that
+  // relaunch the body. Same raycast source, same mesh rules, same 0.4 m
+  // joint overlap, same launch derivation; 63 samples -> 62 segment boxes.
+  for (let r = 90; r <= 570; r += 8) pts.push(r);
   pts.push(585, 600);
   const profile = [];
   for (const r of pts) {
@@ -408,10 +415,16 @@ export function createFall(spawn, scenery) {
       }
       // A bounce is an airborne -> contact transition, and only counts when
       // the body was properly airborne (0.25 s off the rock) and recontacts
-      // with teeth (normal speed >= 2 m/s, judged on the fresh impact of
-      // this step). Box-seam ticks while gap ~= 0 do not count.
+      // with teeth (normal speed >= 1.5 m/s, judged on the fresh impact of
+      // this step). The 0.25 s airtime gate is what excludes box-seam ticks
+      // (seam transitions happen with gap ~= 0 and ~zero airtime). Fix 8:
+      // the old 2 m/s bar exceeded what faithful mid-slope kinks deliver --
+      // a 3-4 deg kink at ~17 m/s launches ~1 m/s normal, and even with
+      // valley amplification (the ground falls away over the 8 m flight, so
+      // the landing hits 1.5-2.5 m/s) most real mid-slope hops land under
+      // 2. Dropping a ~0.3 m hop onto rock IS a bounce; the bar now says so.
       if (touching && !wasTouching) {
-        if (airSinceContact >= 0.25 && lastImpact.age <= 0.1 && lastImpact.strength >= 2) {
+        if (airSinceContact >= 0.25 && lastImpact.age <= 0.1 && lastImpact.strength >= 1.5) {
           facts.bounces += 1;
         }
         airSinceContact = 0;
@@ -508,5 +521,7 @@ export function createFall(spawn, scenery) {
     };
   }
 
-  return { world, body, launch, resetToTop, step, getState, launchPos };
+  // The sampled centreline profile leaves with the handle so the camera's
+  // standoff rule measures against the SAME heights the colliders ride.
+  return { world, body, launch, resetToTop, step, getState, launchPos, profile };
 }

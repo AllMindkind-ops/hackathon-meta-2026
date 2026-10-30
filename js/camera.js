@@ -13,8 +13,34 @@ const CHUTE_FZ = Math.sin(Math.PI / 4);
 // Lateral (one consistent side) for the chase offset below.
 const CHUTE_LX = -Math.sin(Math.PI / 4);
 const CHUTE_LZ = Math.cos(Math.PI / 4);
-// Summit point the look-back view aims at after landing.
-const SUMMIT_LOOK = new THREE.Vector3(0, 590, 0);
+// Look-back clearance: the apron is known-flat rock, so the look-back
+// holds a 1.5 m floor instead of the chase's ridge margin.
+const LOOKBACK_CLEARANCE = 1.5;
+// Chase standoff: after all clamps, the camera must stand this far above
+// the sampled profile surface (the same heights the colliders ride).
+const STANDOFF = 3;
+
+// Sampled centreline profile from physics (set once at boot): the colliders
+// are laid on these heights, so the standoff rule measures rock the body
+// actually rides instead of the analytic line. Null until setFallProfile.
+let fallProfile = null;
+export function setFallProfile(p) {
+  fallProfile = p;
+}
+
+function profileSurfaceY(x, z) {
+  if (!fallProfile || fallProfile.length === 0) return -Infinity;
+  const r = Math.hypot(x, z);
+  if (r <= fallProfile[0].r) return fallProfile[0].h;
+  for (let i = 1; i < fallProfile.length; i++) {
+    if (r <= fallProfile[i].r) {
+      const a = fallProfile[i - 1], b = fallProfile[i];
+      const t = (r - a.r) / (b.r - a.r);
+      return a.h + (b.h - a.h) * t;
+    }
+  }
+  return fallProfile[fallProfile.length - 1].h;
+}
 
 // Chase state: wheel / pinch zoom changes distance only (about 6-24 units),
 // never direction or steering.
@@ -53,14 +79,18 @@ function chuteSurfaceY(r) {
   return 0.3;
 }
 
-function terrainClearanceY(x, z) {
+function rockHeightY(x, z) {
   const r = Math.hypot(x, z);
   let y = chuteSurfaceY(r);
   if (r < DOME_R + 5) {
     const dome = r < BOWL_R ? BOWL_Y : DOME_BASE + Math.sqrt(Math.max(0, DOME_R * DOME_R - r * r));
     if (dome > y) y = dome;
   }
-  return y + CAM_CLEARANCE;
+  return y;
+}
+
+function terrainClearanceY(x, z) {
+  return rockHeightY(x, z) + CAM_CLEARANCE;
 }
 
 export function setChaseDistance(d) {
@@ -117,24 +147,37 @@ export function updateFallCamera(camera, avatar, dt, mode, vel) {
   if (vel) {
     _anchor.addScaledVector(_vel.set(vel.x, vel.y, vel.z), 0.4);
   }
+  // Look-back: camera 4.5 m downslope of the avatar, low, looking back
+  // upslope with the avatar in the foreground. lookAt T sits 3 m upslope of
+  // the feet, ~1 m above head height, so frame centre lands between avatar
+  // and slope. Framing math (feet y=0.3, camera clamped to ~1.8): C->T
+  // climbs ~6 deg; head sits ~8 deg below axis, feet ~25 deg below axis --
+  // inside the 60 deg vertical FOV (half 30), avatar spanning ~17 deg in
+  // the lower frame with the mountainside filling the background.
+  const margin = mode === 'lookback' ? LOOKBACK_CLEARANCE : CAM_CLEARANCE;
   if (mode === 'lookback') {
     _desired.set(
-      avatar.position.x - CHUTE_FX * 4.5,
+      avatar.position.x + CHUTE_FX * 4.5,
       avatar.position.y + 1.1,
-      avatar.position.z - CHUTE_FZ * 4.5
+      avatar.position.z + CHUTE_FZ * 4.5
+    );
+    _look.set(
+      avatar.position.x - CHUTE_FX * 3,
+      avatar.position.y + 2.3,
+      avatar.position.z - CHUTE_FZ * 3
     );
   } else {
     // Behind-and-to-one-side: riding straight down the fall line flattens
     // the slope into a texture backdrop, so the follow sits lateral by a
-    // third of the zoom distance. The avatar stays framed against the
+    // fifth of the zoom distance. The avatar stays framed against the
     // mountainside's profile with sky in view; hits read against rock.
     _desired.set(
-      _anchor.x - CHUTE_FX * d + CHUTE_LX * d / 3,
+      _anchor.x - CHUTE_FX * d + CHUTE_LX * d / 5,
       _anchor.y + d * 0.5 - 1,
-      _anchor.z - CHUTE_FZ * d + CHUTE_LZ * d / 3
+      _anchor.z - CHUTE_FZ * d + CHUTE_LZ * d / 5
     );
   }
-  const floor = terrainClearanceY(_desired.x, _desired.z);
+  const floor = rockHeightY(_desired.x, _desired.z) + margin;
   if (_desired.y < floor) _desired.y = floor;
   camera.position.lerp(_desired, 1 - Math.exp(-(mode === 'lookback' ? 2 : 5) * dt));
   _anchor.set(avatar.position.x, avatar.position.y + 1, avatar.position.z);
@@ -144,7 +187,7 @@ export function updateFallCamera(camera, avatar, dt, mode, vel) {
   if (dist > maxDist) {
     camera.position.copy(_anchor).addScaledVector(_pull, maxDist / dist);
   }
-  const rock = terrainClearanceY(camera.position.x, camera.position.z);
+  const rock = rockHeightY(camera.position.x, camera.position.z) + margin;
   if (camera.position.y < rock) camera.position.y = rock;
   // Look target: the avatar itself with a small velocity lead, computed
   // before the sight-line check below. (The 0.4 s prediction lives in
@@ -172,14 +215,29 @@ export function updateFallCamera(camera, avatar, dt, mode, vel) {
       const need = (rockH + 2 - t * ay) / (1 - t);
       if (need > camera.position.y) camera.position.y = need;
     }
+    // Minimum standoff, last: the analytic surface can sit inside the visual
+    // mesh where the follow swings alongside the skirt, so if the camera is
+    // within 3 m of the SAMPLED profile surface, push it out along its own
+    // offset direction (camera minus body anchor) until it clears. Chase
+    // only -- the look-back sits in the known-flat apron on its 1.5 m floor.
+    // Framing wins over the distance bound here; dist may rarely exceed 18.
+    _pull.copy(camera.position).sub(_anchor);
+    const offLen = _pull.length();
+    if (offLen > 1e-4) {
+      _pull.multiplyScalar(1 / offLen);
+      for (let k = 0; k < 8; k++) {
+        const surf = profileSurfaceY(camera.position.x, camera.position.z);
+        const gap = camera.position.y - surf;
+        if (gap >= STANDOFF) break;
+        camera.position.addScaledVector(_pull, STANDOFF - gap);
+      }
+    }
   }
-  if (mode === 'lookback') {
-    camera.lookAt(SUMMIT_LOOK);
-  } else {
+  if (mode !== 'lookback') {
     kickT += dt;
     _look.y += 0.15 * kick * Math.exp(-kickT / 0.07);
-    camera.lookAt(_look);
   }
+  camera.lookAt(_look);
 }
 
 // Snap the chase camera to the body on Jump: a clean cut to the action so
@@ -191,9 +249,9 @@ export function snapChaseCamera(camera, avatar, vel) {
     _anchor.addScaledVector(_vel.set(vel.x, vel.y, vel.z), 0.4);
   }
   camera.position.set(
-    _anchor.x - CHUTE_FX * d + CHUTE_LX * d / 3,
+    _anchor.x - CHUTE_FX * d + CHUTE_LX * d / 5,
     _anchor.y + d * 0.5 - 1,
-    _anchor.z - CHUTE_FZ * d + CHUTE_LZ * d / 3
+    _anchor.z - CHUTE_FZ * d + CHUTE_LZ * d / 5
   );
   const rock = terrainClearanceY(camera.position.x, camera.position.z);
   if (camera.position.y < rock) camera.position.y = rock;
