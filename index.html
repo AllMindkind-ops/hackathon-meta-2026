@@ -17,7 +17,19 @@
 <body>
   <canvas id="scene"></canvas>
   <div id="facts">PHASE IDLE</div>
-  <button id="jump" type="button">Jump</button>
+  <div id="summit">
+    <input id="intention" type="text" maxlength="140" autocomplete="off"
+      placeholder="Leave an intention on the stone, or don't." />
+    <div id="mood" role="group" aria-label="Mood">
+      <button type="button" data-mood="SOLEMN">Solemn</button>
+      <button type="button" data-mood="RITUAL" class="on" aria-pressed="true">Ritual</button>
+      <button type="button" data-mood="FUCK YES">Fuck yes</button>
+    </div>
+  </div>
+  <div id="verdict" hidden>
+    <div id="godtext"></div>
+    <button id="jump" type="button">Jump</button>
+  </div>
   <script type="module" src="./js/app.js"></script>
 </body>
 </html>

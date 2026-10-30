@@ -5,13 +5,17 @@
 // camera.js: createCamera(avatar) -> camera; placeBehindAvatar(camera, avatar).
 // Fall set wiring (pass 1) is appended below the original boot lines:
 // physics.js owns the fall body and facts, ui.js owns the button/readout.
+// Gods' pass appends: summit intention + MOOD, dice-on-landing, verdict call,
+// verdict display, session log. MOOD only sets flailConfig.level: physics
+// constants never change.
 import * as THREE from 'three';
 import { createScene } from './scene.js';
-import { createAvatar, updateFlail } from './avatar.js';
+import { createAvatar, updateFlail, flailConfig } from './avatar.js';
 import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance, snapChaseCamera, kickCamera, setFallProfile } from './camera.js';
 import { CHUTE_AZIMUTH } from './physics.js';
 import { createFall } from './physics.js';
-import { getUI, setButtonMode, setFacts } from './ui.js';
+import { getUI, setButtonMode, setFacts, setSummitVisible, setMoodUI, setVerdictVisible, showVerdict, clearVerdict } from './ui.js';
+import { rollDice, getVerdict, MOOD_FLAIL } from './god.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -35,6 +39,28 @@ setFallProfile(fall.profile);
 const ui = getUI();
 setButtonMode(ui, 'jump');
 
+// Gods' session state. MOOD persists across falls within the session and is
+// only a presentation + god-temperature setting. The session log holds one
+// entry per completed fall for later bundles, most recent last.
+let mood = 'RITUAL';
+let intentionForFall = null;
+let maxSpeed = 0;
+const sessionLog = [];
+let verdictToken = 0;
+flailConfig.level = MOOD_FLAIL[mood];
+setMoodUI(ui, mood);
+setSummitVisible(ui, true);
+setVerdictVisible(ui, true);
+
+for (const b of ui.moodButtons) {
+  b.addEventListener('click', () => {
+    mood = b.dataset.mood;
+    // MOOD -> flail presentation only. Physics constants never change.
+    flailConfig.level = MOOD_FLAIL[mood] ?? 1;
+    setMoodUI(ui, mood);
+  });
+}
+
 const _off = new THREE.Vector3();
 function syncAvatarToBody() {
   // Centre pivot while falling ONLY: the 1.3 m avatar sits concentrically
@@ -53,6 +79,15 @@ function syncAvatarToBody() {
 
 function doJump() {
   if (fall.getState().phase !== 'falling') {
+    // Whatever is typed (or nothing) is stored for this fall. Wordless
+    // falls are first-class: empty input becomes null.
+    const typed = ui.intention ? ui.intention.value.trim() : '';
+    intentionForFall = typed ? typed : null;
+    maxSpeed = 0;
+    verdictToken += 1;
+    clearVerdict(ui, true);
+    setVerdictVisible(ui, false);
+    setSummitVisible(ui, false);
     fall.launch();
     // Cut straight to the action: the bound holds the frame from here.
     syncAvatarToBody();
@@ -62,10 +97,15 @@ function doJump() {
 }
 
 function doReset() {
+  verdictToken += 1;
+  intentionForFall = null;
   fall.resetToTop();
   avatar.position.copy(spawn);
   avatar.quaternion.identity();
   placeBehindAvatar(camera, avatar);
+  clearVerdict(ui, true);
+  setVerdictVisible(ui, true);
+  setSummitVisible(ui, true);
   setFacts(ui, fall.getState(), camera);
   setButtonMode(ui, 'jump');
 }
@@ -118,6 +158,60 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// A completed fall, as the gods will receive it. facts_summary + verdict as
+// actually shown; session entries accumulate most-recent-last.
+function factsSummary(s) {
+  return {
+    duration_s: s.time,
+    impacts: s.impacts,
+    strongest_impact_ms: s.strongest,
+    airtime_s: s.airtime,
+    bounces: s.bounces,
+    max_speed_ms: maxSpeed,
+  };
+}
+
+// Landed: roll the dice BEFORE any god call, then ask. The silence delay
+// runs from the landing moment; display fires only if this fall is still
+// the current one and the phase is still landed.
+function beginVerdict(s) {
+  const dice = rollDice(mood, {
+    bounces: s.bounces,
+    airtime: s.airtime,
+    strongest: s.strongest,
+    impacts: s.impacts,
+  });
+  ui.god.shape = dice.shape;
+  ui.god.disp = dice.disposition;
+  ui.god.source = '-';
+  const bundle = {
+    intention: intentionForFall,
+    mood,
+    shape: dice.shape,
+    disposition: dice.disposition,
+    fall: factsSummary(s),
+    session: sessionLog.slice(),
+  };
+  const token = verdictToken;
+  const landedAt = performance.now();
+  getVerdict(bundle).then((result) => {
+    ui.god.source = result.source;
+    sessionLog.push({
+      intention: bundle.intention,
+      facts_summary: bundle.fall,
+      verdict: result.sentences.join(' '),
+    });
+    if (token !== verdictToken) return;
+    if (fall.getState().phase !== 'landed') return;
+    const wait = Math.max(0, dice.silenceMs - (performance.now() - landedAt));
+    setTimeout(() => {
+      if (token !== verdictToken) return;
+      if (fall.getState().phase !== 'landed') return;
+      showVerdict(ui, result.sentences);
+    }, wait);
+  });
+}
+
 let last = performance.now();
 let prevPhase = 'idle';
 let prevHitId = 0;
@@ -142,6 +236,7 @@ renderer.setAnimationLoop(() => {
     // Mid-fall: all player input is ignored (no steering of any kind).
     // The body, the flail, and the chase camera do all the work.
     restPose = null;
+    if (s.speed > maxSpeed) maxSpeed = s.speed;
     syncAvatarToBody();
     updateFallCamera(camera, avatar, dt, 'chase', fall.body.velocity);
   } else if (s.phase === 'landed') {
@@ -170,13 +265,21 @@ renderer.setAnimationLoop(() => {
       pz *= 690 / rr;
     }
     restPose = { pos: new THREE.Vector3(px, 0.3, pz) };
+    setSummitVisible(ui, true);
+    setVerdictVisible(ui, true);
+    beginVerdict(s);
   }
   if (s.phase === 'idle' && prevPhase === 'falling') {
     // Visible end (escape or time limit): the body is parked at launch with
     // facts frozen. Park the avatar on it, restore the summit view, and
-    // offer a fresh Jump. Never leave the player staring at fog.
+    // offer a fresh Jump. Never leave the player staring at fog. No verdict:
+    // the gods only speak for landed falls.
+    verdictToken += 1;
     syncAvatarToBody();
     placeBehindAvatar(camera, avatar);
+    clearVerdict(ui, true);
+    setVerdictVisible(ui, true);
+    setSummitVisible(ui, true);
     setButtonMode(ui, 'jump');
   }
   prevPhase = s.phase;
