@@ -22,6 +22,16 @@ const _anchor = new THREE.Vector3();
 const _pull = new THREE.Vector3();
 const _vel = new THREE.Vector3();
 
+// Impact kick: a fresh bounce pops the look target up to 0.15 m,
+// decaying over ~0.2 s. Felt, never a strobe.
+let kick = 0;
+let kickT = 1;
+
+export function kickCamera(normalSpeed) {
+  kick = Math.min(1, normalSpeed / 10);
+  kickT = 0;
+}
+
 // Visual-terrain clearance for the fall camera. The chase offset sits
 // inward and up of the avatar -- near the summit that point can sit inside
 // the curved dome rock -- so desired points are clamped above a conservative
@@ -97,6 +107,13 @@ export function placeBehindAvatar(camera, avatar) {
 // The camera never rolls with the avatar's tumble (up stays +Y).
 export function updateFallCamera(camera, avatar, dt, mode, vel) {
   const d = chaseDistance;
+  // Predicted body position: the follow tracks where the body is going
+  // (0.4 s lead), not where the lerp left it, so it holds distance instead
+  // of sagging behind at speed.
+  _anchor.set(avatar.position.x, avatar.position.y + 1, avatar.position.z);
+  if (vel) {
+    _anchor.addScaledVector(_vel.set(vel.x, vel.y, vel.z), 0.4);
+  }
   if (mode === 'lookback') {
     _desired.set(
       avatar.position.x - CHUTE_FX * 4.5,
@@ -105,14 +122,14 @@ export function updateFallCamera(camera, avatar, dt, mode, vel) {
     );
   } else {
     _desired.set(
-      avatar.position.x - CHUTE_FX * d,
-      avatar.position.y + d * 0.5,
-      avatar.position.z - CHUTE_FZ * d
+      _anchor.x - CHUTE_FX * d,
+      _anchor.y + d * 0.5 - 1,
+      _anchor.z - CHUTE_FZ * d
     );
   }
   const floor = terrainClearanceY(_desired.x, _desired.z);
   if (_desired.y < floor) _desired.y = floor;
-  camera.position.lerp(_desired, 1 - Math.exp(-(mode === 'lookback' ? 2 : 3) * dt));
+  camera.position.lerp(_desired, 1 - Math.exp(-(mode === 'lookback' ? 2 : 5) * dt));
   _anchor.set(avatar.position.x, avatar.position.y + 1, avatar.position.z);
   _pull.copy(camera.position).sub(_anchor);
   const dist = _pull.length();
@@ -122,10 +139,12 @@ export function updateFallCamera(camera, avatar, dt, mode, vel) {
   }
   const rock = terrainClearanceY(camera.position.x, camera.position.z);
   if (camera.position.y < rock) camera.position.y = rock;
-  // Look target (anchor + small velocity lead) is needed by the sight-line
-  // check below, so compute it before the final lookAt.
+  // Look target: the avatar itself with a small velocity lead, computed
+  // before the sight-line check below. (The 0.4 s prediction lives in
+  // _anchor for the follow; the look target stays on the avatar so it
+  // holds centre-frame.)
   if (mode !== 'lookback') {
-    _look.copy(_anchor);
+    _look.set(avatar.position.x, avatar.position.y + 1, avatar.position.z);
     if (vel) {
       _look.addScaledVector(_vel.set(vel.x, vel.y, vel.z), 0.15);
     }
@@ -150,18 +169,24 @@ export function updateFallCamera(camera, avatar, dt, mode, vel) {
   if (mode === 'lookback') {
     camera.lookAt(SUMMIT_LOOK);
   } else {
+    kickT += dt;
+    _look.y += 0.15 * kick * Math.exp(-kickT / 0.07);
     camera.lookAt(_look);
   }
 }
 
 // Snap the chase camera to the body on Jump: a clean cut to the action so
 // the avatar is framed from the first falling frame, then the bound holds it.
-export function snapChaseCamera(camera, avatar) {
+export function snapChaseCamera(camera, avatar, vel) {
   const d = chaseDistance;
+  _anchor.set(avatar.position.x, avatar.position.y + 1, avatar.position.z);
+  if (vel) {
+    _anchor.addScaledVector(_vel.set(vel.x, vel.y, vel.z), 0.4);
+  }
   camera.position.set(
-    avatar.position.x - CHUTE_FX * d,
-    avatar.position.y + d * 0.5,
-    avatar.position.z - CHUTE_FZ * d
+    _anchor.x - CHUTE_FX * d,
+    _anchor.y + d * 0.5 - 1,
+    _anchor.z - CHUTE_FZ * d
   );
   const rock = terrainClearanceY(camera.position.x, camera.position.z);
   if (camera.position.y < rock) camera.position.y = rock;

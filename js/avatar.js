@@ -189,7 +189,32 @@ export function updateFlail(avatar, st, dt) {
   m.t += dts;
 
   const falling = st.phase === 'falling';
-  const energy = falling ? Math.min(1, st.speed / 30) : 0;
+  if (!falling) {
+    // At rest (idle or landed): ease every joint to its neutral pose and
+    // hold it exactly. No oscillation, no twitch: amplitude here is
+    // identically zero, springs parked.
+    const k = 1 - Math.exp(-8 * dts);
+    let far = false;
+    for (const key of ['neck', 'shoulderL', 'shoulderR', 'hipL', 'hipR']) {
+      const j = P[key];
+      const r0 = m.rest[key];
+      j.rotation.x += (r0.x - j.rotation.x) * k;
+      j.rotation.y += (r0.y - j.rotation.y) * k;
+      j.rotation.z += (r0.z - j.rotation.z) * k;
+      if (Math.abs(r0.x - j.rotation.x) + Math.abs(r0.y - j.rotation.y) +
+          Math.abs(r0.z - j.rotation.z) > 1e-4) far = true;
+    }
+    if (!far) {
+      for (const key of ['neck', 'shoulderL', 'shoulderR', 'hipL', 'hipR']) {
+        P[key].rotation.copy(m.rest[key]);
+      }
+    }
+    m.lag.x = m.lag.y = m.lag.z = 0;
+    m.fold = 0;
+    m.foldV = 0;
+    return;
+  }
+  const energy = Math.min(1, st.speed / 30);
 
   // Lagged spin: joints trail the body's turn instead of matching it.
   const lagRate = 3 / (0.6 + L);
