@@ -1,6 +1,10 @@
+import * as THREE from 'three';
+
 // Fall-loop UI, pass 1: one big button plus a small phase/facts readout
 // for testing. Touch-friendly. No intention field, no MOOD control, no god
 // text, no What's next, no sounds.
+
+const _bp = new THREE.Vector3();
 
 export function getUI() {
   return {
@@ -25,18 +29,23 @@ export function setButtonMode(ui, mode) {
 }
 
 // Readout: phase, fall clock, impact count, strongest impact, airtime, body
-// cylindrical position (r, y), current speed, visible-end resets, how the
-// fall ended, per-collider spawn clearance proof, and camera position.
+// cylindrical position (r, y), current speed, worst per-box clearance and
+// which box, camera-to-body distance, visible-end resets, how the fall
+// ended, and camera position.
 export function setFacts(ui, s, camera) {
-  const cam = camera
-    ? `  cam=${camera.position.x.toFixed(1)},${camera.position.y.toFixed(1)},${camera.position.z.toFixed(1)}`
-    : '';
-  const g = s.gaps;
-  const f1 = (v) => (v < 0 ? '' : '+') + (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2));
+  let cam = '';
+  let dist = '';
+  if (camera) {
+    _bp.set(s.pos.x, s.pos.y + 0.3, s.pos.z);
+    dist = `  dist=${camera.position.distanceTo(_bp).toFixed(1)}`;
+    cam = `  cam=${camera.position.x.toFixed(1)},${camera.position.y.toFixed(1)},${camera.position.z.toFixed(1)}`;
+  }
+  const g = s.gapWorst;
+  const gap = `  gap=${g < 0 ? '' : '+'}${Math.abs(g) >= 100 ? g.toFixed(0) : g.toFixed(2)}/${s.gapBox}`;
   ui.facts.textContent =
     `PHASE ${s.phase.toUpperCase()}  t=${s.time.toFixed(1)}s` +
     `  hits=${s.impacts}  max=${s.strongest.toFixed(1)}m/s  air=${s.airtime.toFixed(1)}s` +
     `  r=${s.r.toFixed(1)} y=${s.pos.y.toFixed(1)} v=${s.speed.toFixed(1)}` +
-    `  gaps=M${f1(g.SLOPE)}/F${f1(g.FOOT)}/L${f1(g.LAND)}/A${f1(g['GUIDE-A'])}/B${f1(g['GUIDE-B'])}` +
+    gap + dist +
     `  resets=${s.resets} end=${s.endReason}${cam}`;
 }

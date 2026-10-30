@@ -18,14 +18,16 @@ const SUMMIT_LOOK = new THREE.Vector3(0, 590, 0);
 let chaseDistance = 12;
 const _desired = new THREE.Vector3();
 const _look = new THREE.Vector3();
+const _anchor = new THREE.Vector3();
+const _pull = new THREE.Vector3();
+const _vel = new THREE.Vector3();
 
-// Visual-terrain clearance for the fall camera (fix 1). The chase offset sits
-// inward and up of the avatar -- near the summit that point is INSIDE the
-// curved dome rock (dome surface at radial ~79 reaches y ~553+ridge while the
-// old desired point sat at y ~547), which strobed interior/exterior views.
-// The desired point is now clamped above a conservative terrain height built
-// from the same js/scene.js constants (dome cap + summit bowl, chute line,
-// runout, landing apron), with margin for the dome's sculpted ridges.
+// Visual-terrain clearance for the fall camera. The chase offset sits
+// inward and up of the avatar -- near the summit that point can sit inside
+// the curved dome rock -- so desired points are clamped above a conservative
+// terrain height built from the same js/scene.js constants (dome cap +
+// summit bowl, chute line, runout, landing apron), with margin for the
+// dome's sculpted ridges.
 const DOME_R = 90;
 const DOME_BASE = 510;
 const BOWL_R = 30;
@@ -87,9 +89,13 @@ export function placeBehindAvatar(camera, avatar) {
 
 // Fall camera. mode 'chase': back-and-up offset aligned to the chute;
 // mode 'lookback': low and near the avatar, looking up at the summit.
-// Exactly one write path per frame: clamp above the visual rock, one lerp,
-// one lookAt. The camera never rolls with the avatar's tumble (up stays +Y).
-export function updateFallCamera(camera, avatar, dt, mode) {
+// Exactly one write sequence per call: clamp the desired point above the
+// visual rock, lerp toward it, hard-bound the camera inside 1.5x zoom of
+// the body anchor (lerp lag alone strands it ~100 m behind at speed),
+// clamp the actual position above rock again (the lerp path can sweep
+// through the dome), then one lookAt with a small velocity lead.
+// The camera never rolls with the avatar's tumble (up stays +Y).
+export function updateFallCamera(camera, avatar, dt, mode, vel) {
   const d = chaseDistance;
   if (mode === 'lookback') {
     _desired.set(
@@ -107,15 +113,37 @@ export function updateFallCamera(camera, avatar, dt, mode) {
   const floor = terrainClearanceY(_desired.x, _desired.z);
   if (_desired.y < floor) _desired.y = floor;
   camera.position.lerp(_desired, 1 - Math.exp(-(mode === 'lookback' ? 2 : 3) * dt));
-  // The lerp path can sweep through rock on its way to a clamped endpoint
-  // (e.g. summit view to launch chase crosses the dome), so clamp the actual
-  // camera position too. The camera can never sit inside the mountain.
+  _anchor.set(avatar.position.x, avatar.position.y + 1, avatar.position.z);
+  _pull.copy(camera.position).sub(_anchor);
+  const dist = _pull.length();
+  const maxDist = 1.5 * d;
+  if (dist > maxDist) {
+    camera.position.copy(_anchor).addScaledVector(_pull, maxDist / dist);
+  }
   const rock = terrainClearanceY(camera.position.x, camera.position.z);
   if (camera.position.y < rock) camera.position.y = rock;
   if (mode === 'lookback') {
     camera.lookAt(SUMMIT_LOOK);
   } else {
-    _look.set(avatar.position.x, avatar.position.y + 1, avatar.position.z);
+    _look.copy(_anchor);
+    if (vel) {
+      _look.addScaledVector(_vel.set(vel.x, vel.y, vel.z), 0.15);
+    }
     camera.lookAt(_look);
   }
+}
+
+// Snap the chase camera to the body on Jump: a clean cut to the action so
+// the avatar is framed from the first falling frame, then the bound holds it.
+export function snapChaseCamera(camera, avatar) {
+  const d = chaseDistance;
+  camera.position.set(
+    avatar.position.x - CHUTE_FX * d,
+    avatar.position.y + d * 0.5,
+    avatar.position.z - CHUTE_FZ * d
+  );
+  const rock = terrainClearanceY(camera.position.x, camera.position.z);
+  if (camera.position.y < rock) camera.position.y = rock;
+  _look.set(avatar.position.x, avatar.position.y + 1, avatar.position.z);
+  camera.lookAt(_look);
 }

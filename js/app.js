@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { createAvatar, updateFlail } from './avatar.js';
-import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance } from './camera.js';
+import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance, snapChaseCamera } from './camera.js';
 import { createFall, BODY_RADIUS } from './physics.js';
 import { getUI, setButtonMode, setFacts } from './ui.js';
 
@@ -27,7 +27,8 @@ scene.add(avatar);
 
 const camera = createCamera(avatar);
 
-const fall = createFall(spawn);
+const mountain = scene.getObjectByName('mountain');
+const fall = createFall(spawn, mountain);
 const ui = getUI();
 setButtonMode(ui, 'jump');
 
@@ -43,6 +44,9 @@ function syncAvatarToBody() {
 function doJump() {
   if (fall.getState().phase !== 'falling') {
     fall.launch();
+    // Cut straight to the action: the bound below holds the frame from here.
+    syncAvatarToBody();
+    snapChaseCamera(camera, avatar);
     setButtonMode(ui, 'falling');
   }
 }
@@ -117,7 +121,7 @@ renderer.setAnimationLoop(() => {
     // Mid-fall: all player input is ignored (no steering of any kind).
     // The body, the flail, and the chase camera do all the work.
     syncAvatarToBody();
-    updateFallCamera(camera, avatar, dt, 'chase');
+    updateFallCamera(camera, avatar, dt, 'chase', fall.body.velocity);
   }
   // Landed and idle hold whatever placeBehindAvatar set on transition: one
   // camera writer per frame, never a fight, never fog.
