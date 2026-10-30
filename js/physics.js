@@ -11,21 +11,33 @@ import * as THREE from 'three';
 // body on step one; fix 3 replaced every terrain collider with finite boxes.
 // This fix samples the VISIBLE surface itself: segment boxes laid on the max
 // rock surface along the chute centreline (skirt chute, dome/shoulder
-// overlap, runout), so the body rides what the player sees â€” never under it,
+// overlap, runout), so the body rides what the player sees - never under it,
 // never floating above it. Every collider stays finite.
+// Fix 5: the 1.3 NaN was zone damping 2.5 (cannon-es damps with
+// Math.pow(1-d, dt), so d >= 1 NaNs velocity on the first zone frame);
+// zone braking is manual scaling now. Retuned slower with bounce rhythm,
+// deader foot material, bounces counted as airborne->contact transitions.
 
 // Chute azimuth (radians around Y), same FACE as js/scene.js.
 export const CHUTE_AZIMUTH = Math.PI / 4;
 // Avatar proxy: one sphere body, pass 1 (no multi-body ragdoll).
 export const BODY_RADIUS = 0.7;
-// Retuned for a slower, process-y fall (fix 4): real-ish gravity kept, high
-// slope friction + velocity damping cap the top speed, lively restitution
-// keeps it bouncing instead of rolling smooth. Predicted: peak ~25-28 m/s
-// at the bottom, ~30-38 s down, dozens of counted contacts.
-export const GRAVITY = -7.5;
-// Slope contact: grippy enough to tumble and skid, bouncy enough to ping.
-export const SLOPE_FRICTION = 0.55;
-export const SLOPE_RESTITUTION = 0.5;
+// Retuned for a slower, bounce-rhythm fall (fix 5): lighter gravity for
+// floatier air between bounces, moderate slope friction so it skids and
+// tumbles instead of rolling smooth, lively slope restitution for visible
+// 1-3 m hops, linear damping as the top-speed governor. The steep runout
+// gets its own grabby material so the 63-degree foot brakes instead of
+// re-accelerating. Predicted: slope terminal ~21 m/s, peak ~21-22 at the
+// foot exit, ~48-52 s down, dozens of bounce transitions.
+export const GRAVITY = -5.5;
+// Slope contact: skiddy enough to tumble, bouncy enough to leave the rock.
+export const SLOPE_FRICTION = 0.45;
+export const SLOPE_RESTITUTION = 0.6;
+// Steep runout contact: deliberately grabby + dead bounce so the foot acts
+// as a brake pad instead of re-accelerating: caps peak speed at ~21-22 m/s
+// on exit (the 60 m foot drop otherwise floors the peak near 26).
+export const FOOT_FRICTION = 2.0;
+export const FOOT_RESTITUTION = 0.15;
 // Landing contact: deader than the slope so the run settles into a slide-out.
 export const LAND_FRICTION = 1.0;
 export const LAND_RESTITUTION = 0.2;
@@ -34,17 +46,18 @@ export const GUIDE_FRICTION = 0.1;
 export const GUIDE_RESTITUTION = 0.15;
 // Guide inner faces sit this far either side of the fall line.
 export const GUIDE_INNER = 14;
-// Bottom capture zone (r, y): heavy damping, high friction, backstop.
+// Bottom capture zone (r, y): manual velocity braking, high friction,
+// backstop. (Never cannon damping >= 1 here: Math.pow(1-d, dt) NaNs.)
 export const ZONE_R_MIN = 595;
 export const ZONE_R_MAX = 680;
 export const ZONE_Y = 4;
-export const ZONE_LIN_DAMP = 2.5;
-export const ZONE_ANG_DAMP = 2.5;
+// Retention per second applied manually to velocity + spin inside the zone.
+export const ZONE_BRAKE = 0.15;
 export const ZONE_SETTLE_SPEED = 3;
 export const ZONE_SETTLE_TIME = 0.5;
 export const ZONE_MAX_TIME = 2.5;
 // Hard termination: no fall runs longer than this, under any circumstances.
-export const FALL_TIME_LIMIT = 60;
+export const FALL_TIME_LIMIT = 75;
 // Launch radial: surface height is sampled from the visible profile, plus
 // clearance straight up (provable 2 m skin clearance whatever the local dip).
 export const LAUNCH_R = 102;
@@ -157,11 +170,16 @@ export function createFall(spawn, scenery) {
 
   const bodyMat = new CANNON.Material('avatar');
   const slopeMat = new CANNON.Material('slope');
+  const footMat = new CANNON.Material('foot');
   const landMat = new CANNON.Material('landing');
   const guideMat = new CANNON.Material('guide');
   world.addContactMaterial(new CANNON.ContactMaterial(bodyMat, slopeMat, {
     friction: SLOPE_FRICTION,
     restitution: SLOPE_RESTITUTION,
+  }));
+  world.addContactMaterial(new CANNON.ContactMaterial(bodyMat, footMat, {
+    friction: FOOT_FRICTION,
+    restitution: FOOT_RESTITUTION,
   }));
   world.addContactMaterial(new CANNON.ContactMaterial(bodyMat, landMat, {
     friction: LAND_FRICTION,
@@ -209,7 +227,8 @@ export function createFall(spawn, scenery) {
     const t = { x: erT.x * (dr / len), y: dh / len, z: erT.z * (dr / len) };
     const mr = (a.r + b.r) / 2, mh = (a.h + b.h) / 2;
     const segLen = len / 2 + 0.4;
-    box(i < profile.length - 2 ? `SLOPE-${i}` : 'FOOT', slopeMat,
+    const segName = i < profile.length - 2 ? `SLOPE-${i}` : 'FOOT';
+    box(segName, segName === 'FOOT' ? footMat : slopeMat,
       { x: erT.x * mr - n.x, y: mh - n.y, z: erT.z * mr - n.z },
       basisQuat(n, t),
       { x: 16, y: 1, z: segLen });
@@ -257,7 +276,7 @@ export function createFall(spawn, scenery) {
   });
   body.position.set(spawn.x, spawn.y, spawn.z);
   body.angularDamping = 0.08;
-  body.linearDamping = 0.12;
+  body.linearDamping = 0.1;
   world.addBody(body);
 
   // Fall facts for later gods; no god code in this step.
@@ -267,13 +286,15 @@ export function createFall(spawn, scenery) {
     impacts: 0,
     strongest: 0,
     airtime: 0,
+    bounces: 0,
     resets: 0,
-    endReason: 'â€”',
+    endReason: '-',
   };
   const lastImpact = { strength: 0, age: 99 };
   let settle = 0;
   let zoneTime = 0;
   let touching = false;
+  let wasTouching = false;
 
   body.addEventListener('collide', (e) => {
     if (facts.phase !== 'falling') return;
@@ -302,12 +323,14 @@ export function createFall(spawn, scenery) {
     facts.impacts = 0;
     facts.strongest = 0;
     facts.airtime = 0;
+    facts.bounces = 0;
     facts.resets = 0;
-    facts.endReason = 'â€”';
+    facts.endReason = '-';
     lastImpact.strength = 0;
     lastImpact.age = 99;
     settle = 0;
     zoneTime = 0;
+    wasTouching = false;
   }
 
   // Back to top: park at the summit spawn, everything zeroed, facts cleared.
@@ -318,12 +341,14 @@ export function createFall(spawn, scenery) {
     facts.impacts = 0;
     facts.strongest = 0;
     facts.airtime = 0;
+    facts.bounces = 0;
     facts.resets = 0;
-    facts.endReason = 'â€”';
+    facts.endReason = '-';
     lastImpact.strength = 0;
     lastImpact.age = 99;
     settle = 0;
     zoneTime = 0;
+    wasTouching = false;
   }
 
   // Visible end: the fall STOPS here. Phase to idle, body parked at launch,
@@ -362,26 +387,46 @@ export function createFall(spawn, scenery) {
         }
       }
       if (!touching) facts.airtime += dt;
+      // A bounce is an airborne -> contact transition. The contact-equation
+      // counter undercounts a tumbling fall (one long grind = many
+      // equations, one hard slam = few), so transitions are the honest
+      // bounce metric.
+      if (touching && !wasTouching) facts.bounces += 1;
+      wasTouching = touching;
 
       const p = body.position;
       const speed = body.velocity.length();
       const r = Math.hypot(p.x, p.z);
+      // Root cause of the 1.3 NaN (fix 5): cannon-es applies damping as
+      // velocity *= Math.pow(1 - damping, dt), so any damping >= 1 NaNs the
+      // velocity on the first stepped frame (Math.pow of a negative base).
+      // Zone damping was 2.5: the body entered the capture zone healthy and
+      // died there. Zone braking is now manual scaling (always safe), and
+      // body damping stays below 1 everywhere.
       const inZone = r >= ZONE_R_MIN && r <= ZONE_R_MAX && p.y < ZONE_Y + 1;
       if (inZone) {
-        body.linearDamping = ZONE_LIN_DAMP;
-        body.angularDamping = ZONE_ANG_DAMP;
+        const brake = Math.pow(ZONE_BRAKE, dt);
+        body.velocity.scale(brake, body.velocity);
+        body.angularVelocity.scale(brake, body.angularVelocity);
         zoneTime += dt;
         if (zoneTime > ZONE_MAX_TIME && speed >= ZONE_SETTLE_SPEED) {
           body.velocity.scale(0.9, body.velocity);
           body.angularVelocity.scale(0.9, body.angularVelocity);
         }
-      } else {
-        body.linearDamping = 0.12;
-        body.angularDamping = 0.08;
       }
 
       if (!Number.isFinite(p.x + p.y + p.z + speed)) {
-        endFall('oob-nan');
+        // Sanitize first: zero the garbage so nothing downstream inherits
+        // it. A body that is positionally inside the landing zone when this
+        // happens is treated as landed, not reset.
+        body.velocity.set(0, 0, 0);
+        body.angularVelocity.set(0, 0, 0);
+        if (Number.isFinite(p.x + p.y + p.z) && r >= ZONE_R_MIN && r <= ZONE_R_MAX && p.y < ZONE_Y + 1) {
+          facts.phase = 'landed';
+          facts.endReason = 'landed';
+        } else {
+          endFall('oob-nan');
+        }
       } else if (p.y < -30) {
         endFall('oob-low');
       } else if (r > 1500) {
@@ -421,6 +466,7 @@ export function createFall(spawn, scenery) {
       impacts: facts.impacts,
       strongest: facts.strongest,
       airtime: facts.airtime,
+      bounces: facts.bounces,
       resets: facts.resets,
       endReason: facts.endReason,
       gaps,

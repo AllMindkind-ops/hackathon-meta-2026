@@ -45,6 +45,7 @@ export function setFacts(ui, s, camera) {
   ui.facts.textContent =
     `PHASE ${s.phase.toUpperCase()}  t=${s.time.toFixed(1)}s` +
     `  hits=${s.impacts}  max=${s.strongest.toFixed(1)}m/s  air=${s.airtime.toFixed(1)}s` +
+    `  bn=${s.bounces}` +
     `  r=${s.r.toFixed(1)} y=${s.pos.y.toFixed(1)} v=${s.speed.toFixed(1)}` +
     gap + dist +
     `  resets=${s.resets} end=${s.endReason}${cam}`;

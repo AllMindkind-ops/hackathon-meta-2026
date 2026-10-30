@@ -122,13 +122,34 @@ export function updateFallCamera(camera, avatar, dt, mode, vel) {
   }
   const rock = terrainClearanceY(camera.position.x, camera.position.z);
   if (camera.position.y < rock) camera.position.y = rock;
-  if (mode === 'lookback') {
-    camera.lookAt(SUMMIT_LOOK);
-  } else {
+  // Look target (anchor + small velocity lead) is needed by the sight-line
+  // check below, so compute it before the final lookAt.
+  if (mode !== 'lookback') {
     _look.copy(_anchor);
     if (vel) {
       _look.addScaledVector(_vel.set(vel.x, vel.y, vel.z), 0.15);
     }
+  }
+  // Sight-line clearance: the camera position can be legal while the VIEW
+  // crosses rock (e.g. over the dome shoulder into the chute top). Sample
+  // the segment camera->avatar (t = 0.15..0.85) and raise the camera until
+  // the whole line clears the terrain by 2 m. Line height at t is
+  // cy*(1-t)+ay*t; requiring >= rockH+2 solves to cy >= (rockH+2-t*ay)/(1-t).
+  // Raise-only; framing wins over the distance bound here.
+  if (mode !== 'lookback') {
+    const ax = _look.x, ay = _look.y, az = _look.z;
+    for (let i = 1; i <= 8; i++) {
+      const t = 0.05 + i * 0.1;
+      const px = camera.position.x + (ax - camera.position.x) * t;
+      const pz = camera.position.z + (az - camera.position.z) * t;
+      const rockH = terrainClearanceY(px, pz) - CAM_CLEARANCE;
+      const need = (rockH + 2 - t * ay) / (1 - t);
+      if (need > camera.position.y) camera.position.y = need;
+    }
+  }
+  if (mode === 'lookback') {
+    camera.lookAt(SUMMIT_LOOK);
+  } else {
     camera.lookAt(_look);
   }
 }
