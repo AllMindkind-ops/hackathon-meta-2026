@@ -3,14 +3,14 @@
 //   1. the dice (shape / disposition / silence), rolled client-side on landing;
 //   2. the call (POST { system: SHEET_TEXT, bundle } to GOD_ENDPOINT);
 //   3. the fallback verdict bank (local templates in the gods' grammar).
-// GOD_ENDPOINT ships EMPTY: no API key anywhere in the repo, ever. The live
-// endpoint is deployed separately and pasted in later. When it is empty (or
-// the fetch fails, times out, or returns unusable text) getVerdict composes
+// GOD_ENDPOINT is the live worker URL. No API key anywhere in the repo, ever:
+// the key lives in the worker as a secret. When the endpoint is unreachable
+// (fetch fails, times out, or returns unusable text) getVerdict composes
 // locally from the template bank. The fallback is a feature, not an error:
 // no error text ever reaches the player.
 
-// Single named constant for the live endpoint. Empty until deployed.
-export const GOD_ENDPOINT = '';
+// Single named constant for the live endpoint.
+export const GOD_ENDPOINT = 'https://god-voice.mybrainhasagiftshop.workers.dev';
 
 // SHEET_TEXT: the voice law handed to the model. Faithful condensation of
 // the character sheet: jurisdiction, prohibitions, spectacle rule, meaning
@@ -357,7 +357,7 @@ export async function getVerdict(bundle) {
   if (GOD_ENDPOINT) {
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const timer = setTimeout(() => ctrl.abort(), 12000);
       let res;
       try {
         res = await fetch(GOD_ENDPOINT, {
@@ -371,7 +371,7 @@ export async function getVerdict(bundle) {
       }
       if (res && res.ok) {
         const data = await res.json().catch(() => null);
-        const raw = data && (data.verdict || data.text || data.sentences);
+        const raw = data && (data.sentences || data.verdict || data.text);
         const sentences = Array.isArray(raw) ? raw.map(String) : splitSentences(raw || '');
         const clean = sentences.map((s) => s.trim()).filter(Boolean);
         if (clean.length) return { sentences: clean, source: 'endpoint' };
