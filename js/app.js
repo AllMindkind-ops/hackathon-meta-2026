@@ -17,6 +17,7 @@ import { createFall } from './physics.js';
 import { getUI, setButtonMode, setFacts, setSummitVisible, setSummitEditable, setMoodUI, setVerdictVisible, showVerdict, clearVerdict } from './ui.js';
 import { rollDice, getVerdict, MOOD_FLAIL } from './god.js';
 import { beginRelease, updateRelease, kickRelease, endRelease, releaseFactor, releaseActive, prefersReducedMotion } from './release.js';
+import { beginWeather, updateWeather, endWeather } from './weather.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -104,6 +105,8 @@ function doJump() {
     intentionForFall = typed ? typed : null;
     maxSpeed = 0;
     descentMax = 0;
+    // A new fall ends any previous verdict wait and its weather.
+    endWeather();
     verdictToken += 1;
     clearVerdict(ui, true);
     setVerdictVisible(ui, false);
@@ -130,6 +133,7 @@ function doReset() {
   intentionForFall = null;
   // Fresh summit: no layer survives, the field is empty, MOOD editable.
   endRelease();
+  endWeather();
   if (ui.intention) ui.intention.value = '';
   if (ui.summit) ui.summit.style.opacity = '';
   fall.resetToTop();
@@ -248,6 +252,9 @@ function beginVerdict(s) {
       if (fall.getState().phase !== 'landed') return;
       // One event: the panel appears WITH its sentences (fading in as
       // today), and Back to top appears with the panel, never before it.
+      // The wait is over: weather gone with the panel's arrival, never
+      // overlapping it.
+      endWeather();
       setVerdictVisible(ui, true);
       setButtonMode(ui, 'top');
       showVerdict(ui, result.sentences);
@@ -300,6 +307,8 @@ renderer.setAnimationLoop(() => {
       avatar.quaternion.slerp(IDENTITY_Q, 1 - Math.exp(-3 * dt));
     }
     updateFallCamera(camera, avatar, dt, 'lookback', fall.body.velocity);
+    // Settling dust while the wait lasts; a silent no-op when absent.
+    updateWeather(dt);
   }
   // Idle holds whatever placeBehindAvatar set on transition.
 
@@ -326,6 +335,9 @@ renderer.setAnimationLoop(() => {
     // silence instead of stacking after it. Nothing is shown until text
     // is ready (endpoint or fallback).
     beginVerdict(s);
+    // Weather, not UI: settling light for the wait, around the rest spot.
+    // None if reduced motion (bare wait, current behavior).
+    if (!prefersReducedMotion()) beginWeather(scene, restPose.pos);
   }
   if (s.phase === 'idle' && prevPhase === 'falling') {
     // Visible end (escape or time limit): the body is parked at launch with
