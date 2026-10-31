@@ -278,7 +278,7 @@ const BANK = {
       [
         'You departed the summit with a plan.',
         'The plan survived one bounce, then became a rumour at {maxspeed} metres per second.',
-        'The landing concluded negotiations in the rock's favour.',
+        'The landing concluded negotiations for the rock.',
       ],
       [
         'Once you were standing.',
