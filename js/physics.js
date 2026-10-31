@@ -69,6 +69,9 @@ export const FALL_TIME_LIMIT = 75;
 // clearance straight up (provable 2 m skin clearance whatever the local dip).
 export const LAUNCH_R = 102;
 export const LAUNCH_CLEARANCE = 2.7;
+// Landing-surface reference for the descent fraction: the capture zone
+// settles the body onto the apron near y ~ 1 (0.7 m radius on ground ~0.3).
+export const LAND_REF_Y = 1;
 // One outward impulse: ~5 m/s out along the fall line, ~3.5 m/s up.
 export const LAUNCH_VEL = { x: 3.54, y: 3.5, z: 3.54 };
 
@@ -513,6 +516,7 @@ export function createFall(spawn, scenery) {
       gapBox: worstName,
       pos: { x: p.x, y: p.y, z: p.z },
       r: Math.hypot(p.x, p.z),
+      descent: Math.min(1, Math.max(0, (launchPos.y - p.y) / (launchPos.y - LAND_REF_Y))),
       // Live motion for the avatar sync, the flail, the camera, and the readout.
       speed: body.velocity.length(),
       spin: { x: body.angularVelocity.x, y: body.angularVelocity.y, z: body.angularVelocity.z },

@@ -16,6 +16,7 @@ import { CHUTE_AZIMUTH } from './physics.js';
 import { createFall } from './physics.js';
 import { getUI, setButtonMode, setFacts, setSummitVisible, setSummitEditable, setMoodUI, setVerdictVisible, showVerdict, clearVerdict } from './ui.js';
 import { rollDice, getVerdict, MOOD_FLAIL } from './god.js';
+import { beginRelease, updateRelease, kickRelease, endRelease, releaseFactor, releaseActive, prefersReducedMotion } from './release.js';
 
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -45,6 +46,9 @@ setButtonMode(ui, 'jump');
 let mood = 'RITUAL';
 let intentionForFall = null;
 let maxSpeed = 0;
+// Running maximum of the fall-state descent fraction; the release factor is
+// computed from this so words never return once shed, even across bounces.
+let descentMax = 0;
 const sessionLog = [];
 let verdictToken = 0;
 flailConfig.level = MOOD_FLAIL[mood];
@@ -77,6 +81,21 @@ function syncAvatarToBody() {
   avatar.quaternion.copy(fall.body.quaternion);
 }
 
+// Reduced motion: the summit panel fades out quickly at launch instead of
+// handing words to the release layer. Guarded by token so a fast reset
+// (which restores the panel) is never hidden by a stale timeout.
+function fadeSummitFast(ui) {
+  if (!ui.summit) return;
+  ui.summit.style.transition = 'opacity 0.25s ease';
+  ui.summit.style.opacity = '0';
+  const tok = verdictToken;
+  setTimeout(() => {
+    if (tok !== verdictToken) return;
+    setSummitVisible(ui, false);
+    ui.summit.style.opacity = '';
+  }, 260);
+}
+
 function doJump() {
   if (fall.getState().phase !== 'falling') {
     // Whatever is typed (or nothing) is stored for this fall. Wordless
@@ -84,10 +103,20 @@ function doJump() {
     const typed = ui.intention ? ui.intention.value.trim() : '';
     intentionForFall = typed ? typed : null;
     maxSpeed = 0;
+    descentMax = 0;
     verdictToken += 1;
     clearVerdict(ui, true);
     setVerdictVisible(ui, false);
-    setSummitVisible(ui, false);
+    if (intentionForFall && !prefersReducedMotion()) {
+      // The words leave with the player; the summit panel leaves as today.
+      beginRelease(intentionForFall);
+      setSummitVisible(ui, false);
+    } else if (prefersReducedMotion()) {
+      // No theatrics: the panel fades out quickly and no layer ever forms.
+      fadeSummitFast(ui);
+    } else {
+      setSummitVisible(ui, false);
+    }
     fall.launch();
     // Cut straight to the action: the bound holds the frame from here.
     syncAvatarToBody();
@@ -99,6 +128,10 @@ function doJump() {
 function doReset() {
   verdictToken += 1;
   intentionForFall = null;
+  // Fresh summit: no layer survives, the field is empty, MOOD editable.
+  endRelease();
+  if (ui.intention) ui.intention.value = '';
+  if (ui.summit) ui.summit.style.opacity = '';
   fall.resetToTop();
   avatar.position.copy(spawn);
   avatar.quaternion.identity();
@@ -236,6 +269,8 @@ renderer.setAnimationLoop(() => {
   if (s.hitId !== prevHitId) {
     prevHitId = s.hitId;
     if (s.lastHitV > 4) kickCamera(s.lastHitV);
+    // Every registered impact jostles the words; kicks decay in release.js.
+    if (releaseActive()) kickRelease(s.lastHitV, s.hitId);
   }
 
   if (s.phase === 'falling') {
@@ -245,6 +280,14 @@ renderer.setAnimationLoop(() => {
     if (s.speed > maxSpeed) maxSpeed = s.speed;
     syncAvatarToBody();
     updateFallCamera(camera, avatar, dt, 'chase', fall.body.velocity);
+    // The words ride along: factor from the running descent maximum, gone
+    // by 55% of the fall. The layer removes itself at factor 1.
+    if (releaseActive()) {
+      descentMax = Math.max(descentMax, s.descent);
+      const f = releaseFactor(descentMax);
+      updateRelease(f, dt, now);
+      if (f >= 1) endRelease();
+    }
   } else if (s.phase === 'landed') {
     // Parked: ease the avatar upright at its rest spot, then hold the
     // look-back shot. One camera writer per frame, never a fight.
@@ -271,9 +314,9 @@ renderer.setAnimationLoop(() => {
       pz *= 690 / rr;
     }
     restPose = { pos: new THREE.Vector3(px, 0.3, pz) };
-    setSummitVisible(ui, true);
-    // The verdict stands: the finished fall's intention and MOOD lock.
-    setSummitEditable(ui, false);
+    // Landed screen: verdict panel and Back to top only. The intention panel
+    // stays hidden; the verdict stands by the panel simply not being there.
+    endRelease();
     setVerdictVisible(ui, true);
     beginVerdict(s);
   }
@@ -283,6 +326,7 @@ renderer.setAnimationLoop(() => {
     // offer a fresh Jump. Never leave the player staring at fog. No verdict:
     // the gods only speak for landed falls.
     verdictToken += 1;
+    endRelease();
     syncAvatarToBody();
     placeBehindAvatar(camera, avatar);
     clearVerdict(ui, true);

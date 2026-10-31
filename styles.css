@@ -176,3 +176,24 @@ html, body {
   cursor: default;
   box-shadow: none;
 }
+/* Intention release layer: screen-space words near where the summit panel
+   sat, riding the fall until they shed upward. Decorative only. */
+#release {
+  position: fixed;
+  left: 50%;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 24px));
+  text-align: center;
+  pointer-events: none;
+  font: 15px/1.5 system-ui, sans-serif;
+  color: #f2ecdd;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+#release .rletter {
+  display: inline-block;
+  will-change: transform, opacity;
+}
