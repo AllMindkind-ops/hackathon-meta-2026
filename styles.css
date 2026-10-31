@@ -47,6 +47,12 @@ html, body {
   display: none;
 }
 
+/* Locked on the landed screen: the verdict stands, so the finished fall's
+   intention and MOOD cannot be re-dealt. Dimmed; editable again at summit. */
+#summit.locked {
+  opacity: 0.55;
+}
+
 #intention {
   width: 100%;
   box-sizing: border-box;
@@ -61,6 +67,10 @@ html, body {
 #intention::placeholder {
   color: rgba(242, 236, 221, 0.55);
   font-style: italic;
+}
+
+#intention:disabled {
+  color: rgba(242, 236, 221, 0.6);
 }
 
 #mood {
@@ -86,6 +96,18 @@ html, body {
   color: #1a1206;
   background: #e8a93d;
   border-color: #e8a93d;
+}
+
+#mood button:disabled {
+  color: rgba(207, 200, 184, 0.45);
+  border-color: rgba(242, 236, 221, 0.15);
+  cursor: default;
+}
+
+#mood button.on:disabled {
+  color: #1a1206;
+  background: #8a7a5c;
+  border-color: #8a7a5c;
 }
 
 /* Verdict panel: bottom-scene, carries the gods' words and the button only. */

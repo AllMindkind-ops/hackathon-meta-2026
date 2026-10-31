@@ -14,7 +14,7 @@ import { createAvatar, updateFlail, flailConfig } from './avatar.js';
 import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance, snapChaseCamera, kickCamera, setFallProfile } from './camera.js';
 import { CHUTE_AZIMUTH } from './physics.js';
 import { createFall } from './physics.js';
-import { getUI, setButtonMode, setFacts, setSummitVisible, setMoodUI, setVerdictVisible, showVerdict, clearVerdict } from './ui.js';
+import { getUI, setButtonMode, setFacts, setSummitVisible, setSummitEditable, setMoodUI, setVerdictVisible, showVerdict, clearVerdict } from './ui.js';
 import { rollDice, getVerdict, MOOD_FLAIL } from './god.js';
 
 const canvas = document.getElementById('scene');
@@ -108,6 +108,7 @@ function doReset() {
   setSummitVisible(ui, true);
   setFacts(ui, fall.getState(), camera);
   setButtonMode(ui, 'jump');
+  setSummitEditable(ui, true);
 }
 
 ui.button.addEventListener('click', () => {
@@ -117,6 +118,11 @@ ui.button.addEventListener('click', () => {
 });
 
 window.addEventListener('keydown', (e) => {
+  // Typing must never launch: ignore game keys from text inputs, so a
+  // multi-word intention keeps its spaces. Space with the field unfocused
+  // still jumps.
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
   if (e.code === 'Space') {
     e.preventDefault();
     doJump();
@@ -266,6 +272,8 @@ renderer.setAnimationLoop(() => {
     }
     restPose = { pos: new THREE.Vector3(px, 0.3, pz) };
     setSummitVisible(ui, true);
+    // The verdict stands: the finished fall's intention and MOOD lock.
+    setSummitEditable(ui, false);
     setVerdictVisible(ui, true);
     beginVerdict(s);
   }
@@ -280,6 +288,7 @@ renderer.setAnimationLoop(() => {
     clearVerdict(ui, true);
     setVerdictVisible(ui, true);
     setSummitVisible(ui, true);
+    setSummitEditable(ui, true);
     setButtonMode(ui, 'jump');
   }
   prevPhase = s.phase;

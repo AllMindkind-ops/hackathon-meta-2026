@@ -38,8 +38,8 @@ export const SHEET_TEXT = [
   'complete when you stop speaking, not when the mortal understands.',
   'Tone anchors: "We have witnessed worse. Not often." / "You hesitated at',
   'the edge. The mountain did not." / "Two stones received you. The third',
-  'was unnecessary." / "There was no grace in it. There was, however,',
-  'commitment." / "It is done."',
+  'was unnecessary." / "There was no',
+  'grace in it. There was, however, commitment." / "It is done."',
   'MOOD is the mortal\'s session setting and changes your TEMPERATURE, not',
   'your identity. SOLEMN: still, grave, tender without sentimentality;',
   'humor rare, dry, almost accidental. RITUAL: the rite as normally',
@@ -139,30 +139,71 @@ export function rollDice(mood, fallFacts) {
 }
 
 // ---- Fallback bank: local verdicts in the gods' grammar. -----------------
-// Templates cite real bundle numbers only: {n} impacts, {strongest} m/s,
-// {bounces}, {duration} s, {airtime} s air, {maxspeed} m/s peak. {kept} is
-// the mortal's intention in quotes, or "silence" when none was left.
-// PURE1 lines are genuinely detail-free: no numbers, no named events.
-// At least 4 templates per shape per disposition.
+// Sentence law: every template holds EXACTLY its shape's budget -- DETAIL1
+// 1, DETAIL2 2, PURE1 1, CHAPTERS3 3 -- counting every sentence including
+// epitaph tags, which live inside the budget or not at all. One string per
+// line so the audit can count terminals per line.
+// Detail templates cite real bundle numbers only: {n} impacts, {strongest}
+// m/s, {bounces}, {duration} s, {airtime} s air, {maxspeed} m/s peak.
+// {kept} is the mortal's intention in quotes, or "silence" when none was
+// left. PURE1 lines are genuinely detail-free: no numbers, no named events.
+// No two CHAPTERS3 templates share an opening scaffold, and no closing line
+// appears more than twice in the whole bank.
 const BANK = {
   DETAIL2: {
     grand: [
-      ['You struck the rock {n} times, hardest at {strongest} metres per second. We counted, and the mountain kept count with us.', 'It is done, and it was sufficient.'],
-      ['{bounces} times the slope threw you skyward, and {bounces} times you returned. The air held you {airtime} seconds in all.', 'Such persistence has a shape. We have named it.'],
-      ['For {duration} seconds you belonged to the fall, and your peak was {maxspeed} metres per second. Nothing else in that time was asked of you.', 'The offering is received in full.'],
-      ['The hardest blow landed at {strongest} metres per second. Lesser falls have ended witnesses; yours merely continued.', 'We incline our attention. It is done.'],
+      [
+        'You struck the rock {n} times, hardest at {strongest} metres per second.',
+        'It is done, and it was sufficient.',
+      ],
+      [
+        '{bounces} times the slope returned you to the air, for {airtime} seconds in all.',
+        'Such persistence has a shape, and we have named it.',
+      ],
+      [
+        'For {duration} seconds you belonged to the fall, peaking at {maxspeed} metres per second.',
+        'The offering is received in full.',
+      ],
+      [
+        'The hardest blow landed at {strongest} metres per second, and still you continued down.',
+        'We incline our attention toward you.',
+      ],
     ],
     funny: [
-      ['You bounced {bounces} times, which is {bounces} more times than the mountain expected you to survive bouncing.', 'It has revised its opinion. Grudgingly.'],
-      ['{airtime} seconds of airtime, {n} impacts, and a peak of {maxspeed} metres per second. The paperwork alone is impressive.', 'Filed under offerings. It is done.'],
-      ['The stone reports {n} separate complaints, the loudest at {strongest} metres per second. It asked us to pass them on.', 'We pass them on. It is done.'],
-      ['You were airborne {airtime} seconds out of {duration}. Even the wind filed no objection; it merely watched, as do we.', 'Carry on. Or do not. It is done.'],
+      [
+        'You bounced {bounces} times, which is {bounces} more times than the mountain budgeted for.',
+        'It has revised the budget grudgingly.',
+      ],
+      [
+        '{airtime} seconds of airtime and {n} impacts, with paperwork to match.',
+        'Filed under offerings, stamped, done.',
+      ],
+      [
+        'The stone lodged {n} complaints, the loudest at {strongest} metres per second.',
+        'We have passed them on and washed our hands.',
+      ],
+      [
+        'You were airborne {airtime} seconds out of {duration}, which the wind watched without comment.',
+        'We comment: adequate soaring, poor landing.',
+      ],
     ],
     indifferent: [
-      ['{n} impacts. Hardest: {strongest} metres per second.', 'Noted. It is done.'],
-      ['{bounces} bounces across {duration} seconds, {airtime} of them spent airborne.', 'The mountain remains. So do you. It is done.'],
-      ['Peak speed {maxspeed} metres per second. Total air {airtime} seconds.', 'The figures are entered. It is done.'],
-      ['The fall lasted {duration} seconds and struck {n} times.', 'We witnessed it. It is done.'],
+      [
+        '{n} impacts, hardest {strongest} metres per second.',
+        'Entered into the record.',
+      ],
+      [
+        '{bounces} bounces across {duration} seconds, {airtime} of them airborne.',
+        'The mountain remains, and so do you.',
+      ],
+      [
+        'Peak {maxspeed} metres per second with {airtime} seconds of air.',
+        'The figures stand as read.',
+      ],
+      [
+        'The fall lasted {duration} seconds and struck {n} times.',
+        'We witnessed it to the end.',
+      ],
     ],
   },
   DETAIL1: {
@@ -173,10 +214,10 @@ const BANK = {
       ['{bounces} times you left the stone, and {bounces} times the stone reclaimed you.'],
     ],
     funny: [
-      ['{n} impacts, and you still landed close enough to hear us clear our throats.'],
-      ['The mountain gives your airtime -- {airtime} seconds -- four stars. It gives the landings one.'],
-      ['At {maxspeed} metres per second you were technically flying, just badly, and downward.'],
-      ['You bounced {bounces} times. The third one was nearly graceful. Nearly.'],
+      ['You collected {n} impacts and still landed within hearing of our verdict.'],
+      ['The mountain rates your {airtime} seconds of airtime highly and your landings poorly.'],
+      ['At {maxspeed} metres per second you were technically flying, only downward.'],
+      ['Of your {bounces} bounces, the second-best was nearly graceful.'],
     ],
     indifferent: [
       ['{n} impacts were recorded.'],
@@ -188,41 +229,89 @@ const BANK = {
   PURE1: {
     grand: [
       ['It is done, and it was worthy of the watching.'],
-      ['The mountain receives. We witness. It is enough.'],
-      ['What fell has landed. What was offered stands.'],
-      ['We have witnessed worse. Not often.'],
+      ['The mountain receives, and we witness, and it is enough.'],
+      ['What fell has landed, and what was offered stands.'],
+      ['We have witnessed worse, though not often.'],
     ],
     funny: [
-      ['Well. That happened, and we were here for it.'],
-      ['The mountain sends its regards, and its bruises.'],
-      ['Ambitious. Incorrect. Complete.'],
-      ['We laughed. One of us denies it.'],
+      ['Well, that happened, and we were here for it.'],
+      ['The mountain sends its regards along with its bruises.'],
+      ['Ambitious, incorrect, and complete.'],
+      ['We laughed, though one of us denies it.'],
     ],
     indifferent: [
       ['It is done.'],
-      ['Noted.'],
-      ['The fall occurred.'],
-      ['We saw. It ended.'],
+      ['Noted for the record.'],
+      ['The fall occurred and concluded.'],
+      ['We saw it through to the stillness.'],
     ],
   },
   CHAPTERS3: {
     grand: [
-      ['You left the edge, and the edge released you without ceremony.', 'The middle belonged to the air: {airtime} seconds of borrowed sky across {bounces} risings.', 'The stone closed the account at the bottom. It is done.'],
-      ['The beginning was a decision the mountain did not witness.', 'The middle was {duration} seconds of argument with gravity, conducted at {maxspeed} metres per second.', 'The end was a landing. All landings are verdicts. This one reads: sufficient.'],
-      ['First the leap, which is always the same leap.', 'Then the {n} reckonings, the hardest at {strongest} metres per second, each one a paragraph.', 'Then the stillness, which is the mountain keeping the last word. It is done.'],
-      ['The top gave you height. The slope gave you {bounces} separate heavens, {airtime} seconds in all.', 'The bottom gave you back. We give you meaning: it counted.'],
+      [
+        'You left the edge, and the edge released you without ceremony.',
+        'The middle belonged to the air for {airtime} seconds across {bounces} risings.',
+        'The stone closed the account at the bottom.',
+      ],
+      [
+        'The leap itself was unremarkable.',
+        'The middle was {duration} seconds of argument with gravity at {maxspeed} metres per second.',
+        'The landing reads, in full: sufficient.',
+      ],
+      [
+        'Height was given, and the rest was negotiation.',
+        'The slope collected {n} payments, the largest at {strongest} metres per second.',
+        'The stillness keeps the last word.',
+      ],
+      [
+        'The summit watched you go, as it watches everything go.',
+        'You borrowed {airtime} seconds of sky and repaid them all at once.',
+        'We pronounce the account settled.',
+      ],
     ],
     funny: [
-      ['Act one: confidence. Act two: {n} impacts of revision.', 'The interval featured {airtime} seconds of unintended flight.', 'Act three: the floor. Reviews are mixed; ours is favourable.'],
-      ['You departed the summit with a plan. The plan lasted one bounce.', '{bounces} bounces later, travelling at {maxspeed} metres per second, the plan was a rumour.', 'The landing concluded negotiations. It is done.'],
-      ['Chapter one: up. Brief, involuntary, historic.', 'Chapter two: down, {n} times, with feeling, hardest at {strongest} metres per second.', 'Chapter three: stopped. The end.'],
-      ['Once you were standing. Then you were falling for {duration} seconds.', 'In between came {bounces} bounces, which the mountain insists on calling dancing.', 'It was not dancing. It is done.'],
+      [
+        'Act one: confidence.',
+        'Act two featured {n} impacts of revision and {airtime} seconds of unintended flight.',
+        'Act three: the floor, and a favourable review from us.',
+      ],
+      [
+        'You departed the summit with a plan.',
+        'The plan survived one bounce, then became a rumour at {maxspeed} metres per second.',
+        'The landing concluded negotiations in the rock's favour.',
+      ],
+      [
+        'Once you were standing.',
+        'Then came {duration} seconds of falling, {bounces} bounces, and feeling.',
+        'Then came the stopping, which is the entire moral.',
+      ],
+      [
+        'The mountain sells tickets to this, and yours was complimentary.',
+        'You used the full {airtime} seconds of airtime and most of the slope.',
+        'No refunds were requested, and none will be given.',
+      ],
     ],
     indifferent: [
-      ['It began at the top.', 'It continued for {duration} seconds, {airtime} airborne, {n} impacts.', 'It ended at the bottom. It is done.'],
-      ['First: the leap.', 'Then: {bounces} bounces and a peak of {maxspeed} metres per second.', 'Finally: stillness. Noted.'],
-      ['The fall opened.', 'The middle contained {n} impacts, hardest {strongest} metres per second.', 'The fall closed.'],
-      ['You went down.', 'Down took {duration} seconds and returned you {bounces} times to the air.', 'Down finished.'],
+      [
+        'It began at the top.',
+        'It continued {duration} seconds with {n} impacts, hardest {strongest} metres per second.',
+        'It ended at the bottom.',
+      ],
+      [
+        'The fall opened without announcement.',
+        'The middle held {bounces} bounces and a peak of {maxspeed} metres per second.',
+        'The fall closed without comment.',
+      ],
+      [
+        'Up, then down: the usual order.',
+        'Down took {duration} seconds and returned you to the air {bounces} times.',
+        'Down finished at the customary place.',
+      ],
+      [
+        'A body, a slope, a duration.',
+        'The duration was {duration} seconds, the airtime {airtime}.',
+        'The body stopped, as bodies do.',
+      ],
     ],
   },
 };
@@ -249,7 +338,7 @@ function fill(template, bundle) {
 function fallbackVerdict(bundle) {
   const pool = (BANK[bundle.shape] && BANK[bundle.shape][bundle.disposition]) ||
     BANK.DETAIL1.indifferent;
-  return fill(pool[Math.floor(Math.random() * pool.length)], bundle);
+  return fill(pool[Math.floor(Math.random() * pool.length)], pool);
 }
 
 // Split endpoint prose into sentences. Generous: anything non-empty counts.

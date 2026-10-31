@@ -46,6 +46,16 @@ export function setSummitVisible(ui, show) {
   if (ui.summit) ui.summit.hidden = !show;
 }
 
+// The gods' word, once spoken, stands: on the landed screen the summit
+// panel locks (dimmed via .locked) so a MOOD click cannot re-deal the
+// finished fall. MOOD changes apply from the next fall. The verdict panel
+// and "Back to top" are unaffected.
+export function setSummitEditable(ui, editable) {
+  if (ui.intention) ui.intention.disabled = !editable;
+  for (const b of ui.moodButtons) b.disabled = !editable;
+  if (ui.summit) ui.summit.classList.toggle('locked', !editable);
+}
+
 // Highlight the active MOOD stop.
 export function setMoodUI(ui, mood) {
   ui.god.mood = mood;
