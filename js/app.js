@@ -246,6 +246,10 @@ function beginVerdict(s) {
     setTimeout(() => {
       if (token !== verdictToken) return;
       if (fall.getState().phase !== 'landed') return;
+      // One event: the panel appears WITH its sentences (fading in as
+      // today), and Back to top appears with the panel, never before it.
+      setVerdictVisible(ui, true);
+      setButtonMode(ui, 'top');
       showVerdict(ui, result.sentences);
     }, wait);
   });
@@ -302,7 +306,8 @@ renderer.setAnimationLoop(() => {
   updateFlail(avatar, s, dt);
   setFacts(ui, s, camera);
   if (s.phase === 'landed' && prevPhase !== 'landed') {
-    setButtonMode(ui, 'top');
+    // Bare scene until the gods speak: no panel, no button anywhere.
+    // Panel + Back to top arrive together with the sentences, below.
     // Rest spot in the open apron: a few metres downslope of where the body
     // settled, feet on the landing top, clamped inside the disc. Presentation
     // park only; the physics facts stay exactly as recorded.
@@ -317,7 +322,9 @@ renderer.setAnimationLoop(() => {
     // Landed screen: verdict panel and Back to top only. The intention panel
     // stays hidden; the verdict stands by the panel simply not being there.
     endRelease();
-    setVerdictVisible(ui, true);
+    // The verdict request fires now, so network time overlaps the rolled
+    // silence instead of stacking after it. Nothing is shown until text
+    // is ready (endpoint or fallback).
     beginVerdict(s);
   }
   if (s.phase === 'idle' && prevPhase === 'falling') {
