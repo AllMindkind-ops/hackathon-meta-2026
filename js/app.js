@@ -36,6 +36,32 @@ const camera = createCamera(avatar);
 
 const mountain = scene.getObjectByName('mountain');
 const fall = createFall(spawn, mountain);
+// Rest planting (visual only): the summit spawn carries the nominal
+// SUMMIT_Y, so stand the avatar group on the BUILT mesh instead --
+// raycast straight down at the start x,z (same rock-mesh rules as the
+// physics profile sampler) and put the feet-origin group on the hit.
+// The physics spawn, launchPos, and launch velocity are untouched, so
+// the deterministic fall cannot change; only the rest y is corrected.
+const _down = new THREE.Vector3(0, -1, 0);
+const _origin = new THREE.Vector3();
+const _ray = new THREE.Raycaster();
+_ray.far = 2000;
+function plantAvatarAtRest() {
+  mountain.updateMatrixWorld(true);
+  const meshes = [];
+  mountain.traverse((o) => {
+    if (o.isMesh && !o.isInstancedMesh && o.geometry && o.geometry.type !== 'PlaneGeometry') {
+      meshes.push(o);
+    }
+  });
+  _origin.set(spawn.x, 1500, spawn.z);
+  _ray.set(_origin, _down);
+  const hits = _ray.intersectObjects(meshes, false);
+  const g = hits.length ? hits[0].point.y : spawn.y;
+  avatar.position.set(spawn.x, g, spawn.z);
+}
+// Boot stand: correct the nominal copy above to the mesh before first frame.
+plantAvatarAtRest();
 // The camera standoff rule measures the same sampled heights the colliders ride.
 setFallProfile(fall.profile);
 const ui = getUI();
@@ -137,7 +163,7 @@ function doReset() {
   if (ui.intention) ui.intention.value = '';
   if (ui.summit) ui.summit.style.opacity = '';
   fall.resetToTop();
-  avatar.position.copy(spawn);
+  plantAvatarAtRest();
   avatar.quaternion.identity();
   placeBehindAvatar(camera, avatar);
   clearVerdict(ui, true);
