@@ -338,7 +338,7 @@ function fill(template, bundle) {
 function fallbackVerdict(bundle) {
   const pool = (BANK[bundle.shape] && BANK[bundle.shape][bundle.disposition]) ||
     BANK.DETAIL1.indifferent;
-  return fill(pool[Math.floor(Math.random() * pool.length)], pool);
+  return fill(pool[Math.floor(Math.random() * pool.length)], bundle);
 }
 
 // Split endpoint prose into sentences. Generous: anything non-empty counts.
@@ -380,5 +380,11 @@ export async function getVerdict(bundle) {
       // Fall through to the local bank. Never an error state.
     }
   }
-  return { sentences: fallbackVerdict(bundle), source: 'fallback' };
+  try {
+    return { sentences: fallbackVerdict(bundle), source: 'fallback' };
+  } catch (e) {
+    // Last resort: a throw inside fallback composition must never dead-end
+    // the verdict silently. Static PURE1, no slots to fill, always resolves.
+    return { sentences: ['It is done.'], source: 'fallback' };
+  }
 }
