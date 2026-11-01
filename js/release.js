@@ -82,13 +82,14 @@ export function beginRelease(text) {
         vy: -10 - 24 * hash01(i * 5 + k, seed + 37),
         dur: 500 + 400 * hash01(i * 5 + k, seed + 41),
       })),
-      burst: [0, 1, 2, 3, 4].map((k) => {
+      burst: [0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
         const a = hash01(i * 7 + k, seed + 53) * Math.PI * 2;
-        const sp = 20 + 35 * hash01(i * 7 + k, seed + 59);
+        const sp = 30 + 50 * hash01(i * 7 + k, seed + 59);
         return {
           vx: Math.cos(a) * sp,
           vy: Math.sin(a) * sp - 18,
-          dur: 350 + 300 * hash01(i * 7 + k, seed + 61),
+          dur: 500 + 400 * hash01(i * 7 + k, seed + 61),
+          sz: 3 + 2 * hash01(i * 7 + k, seed + 67),
         };
       }),
       threshold: SHED_START + (SHED_END - SHED_START) * hash01(i, seed),
@@ -131,10 +132,16 @@ function letterCY(L) {
   const h = layer.getBoundingClientRect();
   return r.top + r.height / 2 - h.top;
 }
-function spawnSpark(x0, y0, vx, vy, now, dur) {
+function spawnSpark(x0, y0, vx, vy, now, dur, sz = 0) {
   if (!sparkBox) return;
   const el = document.createElement('span');
   el.className = 'spark';
+  if (sz > 0) {
+    el.style.width = `${sz.toFixed(1)}px`;
+    el.style.height = `${sz.toFixed(1)}px`;
+    el.style.left = `${(-sz / 2).toFixed(1)}px`;
+    el.style.top = `${(-sz / 2).toFixed(1)}px`;
+  }
   sparkBox.appendChild(el);
   live.push({ el, x0, y0, vx, vy, t0: now, dur });
 }
@@ -182,13 +189,14 @@ export function updateRelease(factor, dt, now) {
       `translate(${(L.drift * e).toFixed(1)}px, ${(-L.rise * e).toFixed(1)}px)` +
       ` rotate(${(L.rot * e).toFixed(1)}deg)`;
     // Ember-gold flash for the first breath of the shed, then back to stone.
-    L.el.style.color = q < 0.3 ? '#ffc45e' : '';
+    L.el.style.color = q < 0.45 ? '#ffd77e' : '';
+    L.el.style.textShadow = q < 0.45 ? '0 0 12px rgba(255,180,90,0.9), 0 1px 6px rgba(0,0,0,0.8)' : '';
     L.el.style.opacity = String(1 - e);
     if (q >= 1) {
       L.done = true;
       // Burnout: the letter ends as sparks from its final risen spot,
       // not a plain fade.
-      for (const b of L.burst) spawnSpark(L.x0 + L.drift, L.y0 - L.rise, b.vx, b.vy, now, b.dur);
+      for (const b of L.burst) spawnSpark(L.x0 + L.drift, L.y0 - L.rise, b.vx, b.vy, now, b.dur, b.sz);
       L.el.style.visibility = 'hidden';
     }
   }
