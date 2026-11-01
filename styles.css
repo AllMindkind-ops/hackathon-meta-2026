@@ -332,6 +332,29 @@ html, body {
     font-size: 11px;
   }
 }
+/* Mute toggle (sound-1): fixed bottom-right, above the PHASE strip, clear
+   of the summit panel (top-centre) and the verdict panel (bottom-centre).
+   Stays hidden until js/sound.js unhides it, so a game without the module
+   or without Web Audio shows nothing extra. 44px touch target. */
+#mute {
+  position: fixed;
+  right: 12px;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  z-index: 15;
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+  line-height: 1;
+  color: #f2ecdd;
+  background: rgba(10, 12, 20, 0.62);
+  border: 1px solid rgba(232, 169, 61, 0.35);
+  border-radius: 12px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+#mute[hidden] {
+  display: none;
+}
 #release .rletter {
   display: inline-block;
   will-change: transform, opacity;

@@ -36,6 +36,15 @@ const camera = createCamera(avatar);
 
 const mountain = scene.getObjectByName('mountain');
 const fall = createFall(spawn, mountain);
+// Sound-1: synthesized audio, loaded lazily. Guarded dynamic import so the
+// game loads identically with js/sound.js removed; the module itself is a
+// silent no-op when Web Audio is unavailable. No sound before the first
+// user gesture, ever (the context is gesture-gated inside the module).
+let sound = null;
+import('./sound.js').then((m) => {
+  sound = m.initSound();
+  fall.onImpact((v) => sound.notifyImpact(v));
+}).catch(() => { sound = null; });
 // Rest planting (visual only): the summit spawn carries the nominal
 // SUMMIT_Y, so stand the avatar group on the BUILT mesh instead --
 // raycast straight down at the start x,z (same rock-mesh rules as the
@@ -327,6 +336,7 @@ renderer.setAnimationLoop(() => {
   last = now;
 
   const s = fall.step(dt);
+  if (sound) sound.update(dt, fall.getContact());
 
   // Impact kick: a fresh hard bounce pops the look target. Felt, not a flash.
   if (s.hitId !== prevHitId) {
@@ -371,6 +381,7 @@ renderer.setAnimationLoop(() => {
   updateFlail(avatar, s, dt);
   setFacts(ui, s, camera);
   if (s.phase === 'landed' && prevPhase !== 'landed') {
+    if (sound) sound.playLanding();
     // Bare scene until the gods speak: no panel, no button anywhere.
     // Panel + Back to top arrive together with the sentences, below.
     // Rest spot in the open apron: a few metres downslope of where the body

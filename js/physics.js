@@ -309,6 +309,13 @@ export function createFall(spawn, scenery) {
   };
   const lastImpact = { strength: 0, age: 99 };
   const lastHit = { id: 0, speed: 0 };
+  // Sound stream (sound-1): subscribers hear every collide impact velocity
+  // while falling, including sub-floor ones; the sound module applies its
+  // own floor. Notifying here changes no physics behavior.
+  const impactListeners = new Set();
+  // Latest contact normal (unit; sign irrelevant for the tangent
+  // projection) for the scrape slide-speed computation below.
+  let contactNx = 0, contactNy = 1, contactNz = 0;
   let settle = 0;
   let zoneTime = 0;
   let airSinceContact = 0;
@@ -318,6 +325,9 @@ export function createFall(spawn, scenery) {
   body.addEventListener('collide', (e) => {
     if (facts.phase !== 'falling') return;
     const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
+    for (const fn of impactListeners) {
+      try { fn(v); } catch { /* sound must never break physics */ }
+    }
     if (v > 1.5) {
       facts.impacts += 1;
       if (v > facts.strongest) facts.strongest = v;
@@ -409,6 +419,8 @@ export function createFall(spawn, scenery) {
       for (const c of world.contacts) {
         if (c.bi === body || c.bj === body) {
           touching = true;
+          const nl = Math.hypot(c.ni.x, c.ni.y, c.ni.z) || 1;
+          contactNx = c.ni.x / nl; contactNy = c.ni.y / nl; contactNz = c.ni.z / nl;
           break;
         }
       }
@@ -490,6 +502,19 @@ export function createFall(spawn, scenery) {
     return getState();
   }
 
+  function onImpact(fn) {
+    impactListeners.add(fn);
+    return () => { impactListeners.delete(fn); };
+  }
+  function getContact() {
+    const vx = body.velocity.x, vy = body.velocity.y, vz = body.velocity.z;
+    const vn = vx * contactNx + vy * contactNy + vz * contactNz;
+    const tx = vx - vn * contactNx, ty = vy - vn * contactNy, tz = vz - vn * contactNz;
+    return {
+      touching: facts.phase === 'falling' && touching,
+      slideSpeed: Math.hypot(tx, ty, tz),
+    };
+  }
   function getState() {
     const p = body.position;
     const gaps = gapsAt({ x: p.x, y: p.y, z: p.z });
@@ -527,5 +552,5 @@ export function createFall(spawn, scenery) {
 
   // The sampled centreline profile leaves with the handle so the camera's
   // standoff rule measures against the SAME heights the colliders ride.
-  return { world, body, launch, resetToTop, step, getState, launchPos, profile };
+  return { world, body, launch, resetToTop, step, getState, launchPos, profile, onImpact, getContact };
 }
