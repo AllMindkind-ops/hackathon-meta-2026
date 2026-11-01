@@ -527,7 +527,7 @@ function createSky(sunDir) {
         vec2 cuv = vDir.xz / (0.35 + max(vDir.y, 0.02));
         float cl = snoise(cuv * 3.0) * 0.6 + snoise(cuv * 7.0) * 0.4;
         float cmask = smoothstep(0.05, 0.35, vDir.y) * (1.0 - clamp(pow(s, 8.0) * 1.2, 0.0, 0.7));
-        col *= 1.0 + (cl - 0.5) * 0.10 * cmask;
+        col *= 1.0 + (cl - 0.5) * 0.22 * cmask;
         float band = sin(vDir.y * 46.0 + atan(vDir.z, vDir.x) * 2.0) * 0.5 + 0.5;
         float bandM = smoothstep(0.03, 0.12, vDir.y) * (1.0 - smoothstep(0.12, 0.3, vDir.y));
         col = mix(col, vec3(1.0, 0.85, 0.75), bandM * smoothstep(0.4, 0.8, band) * 0.5);
@@ -537,8 +537,8 @@ function createSky(sunDir) {
         vec2 sp = vDir.xz / max(vDir.y, 0.15) * 90.0;
         vec2 scell = floor(sp);
         vec2 spos = fract(sp) - 0.5;
-        float star = smoothstep(0.10, 0.0, length(spos)) * step(0.985, shash(scell));
-        col += vec3(1.0, 0.95, 0.88) * star * dark * 0.5;
+        float star = smoothstep(0.12, 0.0, length(spos)) * step(0.975, shash(scell));
+        col += vec3(1.0, 0.95, 0.88) * star * dark * 0.9;
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
