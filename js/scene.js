@@ -500,15 +500,45 @@ function createSky(sunDir) {
       uniform vec3 horizon;
       uniform vec3 glow;
       uniform vec3 sunDir;
+      float shash(vec2 p) {
+        p = fract(p * vec2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+      }
+      float snoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = shash(i);
+        float b = shash(i + vec2(1.0, 0.0));
+        float c = shash(i + vec2(0.0, 1.0));
+        float d = shash(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+      }
       void main() {
         float h = clamp(vDir.y, 0.0, 1.0);
         vec3 col = mix(horizon, top, pow(h, 0.55));
         if (vDir.y < 0.0) col = mix(horizon, horizon * 0.55, clamp(-vDir.y * 3.0, 0.0, 1.0));
         float s = max(dot(normalize(vDir), sunDir), 0.0);
         col += glow * (pow(s, 350.0) * 1.2 + pow(s, 8.0) * 0.22);
+        // Soft cloud variation: two low octaves of value noise on a planar
+        // projection, height-masked so the horizon stays clean and scaled
+        // down where the sun glow dominates. Same-hue luminance only.
+        vec2 cuv = vDir.xz / (0.35 + max(vDir.y, 0.02));
+        float cl = snoise(cuv * 3.0) * 0.6 + snoise(cuv * 7.0) * 0.4;
+        float cmask = smoothstep(0.05, 0.35, vDir.y) * (1.0 - clamp(pow(s, 8.0) * 1.2, 0.0, 0.7));
+        col *= 1.0 + (cl - 0.5) * 0.10 * cmask;
         float band = sin(vDir.y * 46.0 + atan(vDir.z, vDir.x) * 2.0) * 0.5 + 0.5;
         float bandM = smoothstep(0.03, 0.12, vDir.y) * (1.0 - smoothstep(0.12, 0.3, vDir.y));
         col = mix(col, vec3(1.0, 0.85, 0.75), bandM * smoothstep(0.4, 0.8, band) * 0.5);
+        // Faint star depth: sparse hashed pinpoints, only in the dark upper
+        // sky away from the sun. Kept dim so overlay text stays readable.
+        float dark = smoothstep(0.45, 0.8, h) * (1.0 - smoothstep(0.0, 0.4, s));
+        vec2 sp = vDir.xz / max(vDir.y, 0.15) * 90.0;
+        vec2 scell = floor(sp);
+        vec2 spos = fract(sp) - 0.5;
+        float star = smoothstep(0.10, 0.0, length(spos)) * step(0.985, shash(scell));
+        col += vec3(1.0, 0.95, 0.88) * star * dark * 0.5;
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
