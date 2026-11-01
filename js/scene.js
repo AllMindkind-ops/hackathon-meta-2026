@@ -151,6 +151,55 @@ function mountainRockMaterial() {
   return mat;
 }
 
+// Base ground: the same cracked-earth rock language as the landing apron,
+// varied at two scales so it reads as terrain up close and from the summit.
+// The hard rim dissolves into the horizon haze with an alpha fade (no
+// geometry change: the collision surface is untouched).
+function groundMaterial() {
+  const mat = new THREE.MeshStandardMaterial({
+    map: lightTex,
+    roughness: 1,
+    transparent: true,
+    depthWrite: false,
+  });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.mapDetail = { value: darkTex };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWp;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vWp;
+        uniform sampler2D mapDetail;
+        float gHash(vec2 p) {
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+        }
+        float gNoise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(gHash(i), gHash(i + vec2(1.0, 0.0)), f.x),
+                     mix(gHash(i + vec2(0.0, 1.0)), gHash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }`)
+      .replace('#include <map_fragment>', `
+        vec3 gBase = texture2D(map, vMapUv * vec2(90.0, 90.0)).rgb;
+        vec3 gDet = texture2D(mapDetail, vMapUv * vec2(700.0, 700.0)).rgb;
+        float gPatch = gNoise(vWp.xz * 0.008);
+        float gGrain = gNoise(vWp.xz * 0.12);
+        vec3 gearth = mix(gBase, gDet, 0.30 + 0.40 * gPatch);
+        gearth *= 0.82 + 0.36 * gGrain;
+        float vein = 1.0 - smoothstep(0.0, 0.08, abs(gNoise(vWp.xz * 0.045) - 0.5));
+        gearth *= 1.0 - vein * 0.25;
+        diffuseColor.rgb = gearth;`)
+      .replace('#include <color_fragment>', `
+        float gRim = length(vWp.xz);
+        diffuseColor.a *= 1.0 - smoothstep(800.0, 1080.0, gRim);`);
+  };
+  return mat;
+}
+
 // Displace a Y-centered cylinder radially by radialFn(theta, y01). Vertex color
 // carries shader masks: r = chute gate (1 on the chute, no snow),
 // g = crevice (1 in gullies, snow settles here), b = chute-edge streaks.
@@ -562,7 +611,7 @@ export function createScene() {
   }
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(2200, 2200),
-    new THREE.MeshStandardMaterial({ map: meadowTexture() })
+    groundMaterial()
   );
   ground.rotation.x = -Math.PI / 2;
   ground.name = 'ground-plane';
