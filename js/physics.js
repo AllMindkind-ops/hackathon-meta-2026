@@ -32,7 +32,7 @@ export const BODY_RADIUS = 0.7;
 export const GRAVITY = -5.5;
 // Slope contact: skiddy enough to tumble, bouncy enough to leave the rock.
 export const SLOPE_FRICTION = 0.45;
-export const SLOPE_RESTITUTION = 0.6;
+export const SLOPE_RESTITUTION = 0.7;
 // Damping, pass 6 reverted: angular damping 0.6 while touching turned the
 // roll into a crawl (a rolling sphere's spin IS its motion). Constant 0.08
 // everywhere; linear 0.12 as the whole roll cap (was 0.1 in 1.5).
