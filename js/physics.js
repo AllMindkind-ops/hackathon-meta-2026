@@ -34,7 +34,7 @@ export const GRAVITY = -5.5;
 // GRAVITY_START at launch, rising by smoothstep to exactly 1.0 at
 // GRAVITY_FULL_D (first quarter of descent), standard gravity below that,
 // forever. MOOD-independent: it is physics.
-export const GRAVITY_START = 0.6;
+export const GRAVITY_START = 0.45;
 export const GRAVITY_FULL_D = 0.25;
 function gravityMultiplier(d) {
   if (d >= GRAVITY_FULL_D) return 1;
