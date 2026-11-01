@@ -152,7 +152,7 @@ function doJump() {
     } else {
       setSummitVisible(ui, false);
     }
-    fall.launch(mood);
+    fall.launch();
     resetVisualTumble(avatar);
     // Cut straight to the action: the bound holds the frame from here.
     syncAvatarToBody();
