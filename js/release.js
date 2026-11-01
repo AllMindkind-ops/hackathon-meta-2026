@@ -12,6 +12,10 @@
 // must cross 55% (the capture zone sits at the bottom of the column), so
 // completion never depends on collision count. Bounces are accents only.
 const COMPLETE_AT = 0.55;
+// Letter size: the single tuning knob for release readability (~2x the old
+// 15 px summit-panel size so the words read at a glance on a phone). Applied
+// to the layer below; styles.css carries the same value as fallback.
+export const RELEASE_LETTER_PX = 30;
 export function releaseFactor(descentMax) {
   return Math.min(1, Math.max(0, descentMax) / COMPLETE_AT);
 }
@@ -50,6 +54,7 @@ export function beginRelease(text) {
   endRelease();
   const seed = (seq += 1);
   const host = document.createElement('div');
+  host.style.fontSize = RELEASE_LETTER_PX + 'px';
   host.id = 'release';
   host.setAttribute('aria-hidden', 'true');
   const inner = document.createElement('div');

@@ -186,7 +186,9 @@ html, body {
   width: min(420px, calc(100vw - 24px));
   text-align: center;
   pointer-events: none;
-  font: 15px/1.5 system-ui, sans-serif;
+  /* Size owned by RELEASE_LETTER_PX in js/release.js (applied inline); this
+     fallback stays in sync. */
+  font: 30px/1.5 system-ui, sans-serif;
   color: #f2ecdd;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
   white-space: pre-wrap;
