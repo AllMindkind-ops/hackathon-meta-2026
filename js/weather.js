@@ -4,6 +4,8 @@
 // state. Density grows only with wall-clock wait time (staggered births),
 // so a short wait correctly shows few or none. One draw call, 36 points
 // maximum, instant synchronous removal the moment the verdict is ready.
+// A minority of motes are larger, slower, deeper-gold embers, and any mote
+// may catch an occasional brighter flare: richness, never a blizzard.
 import * as THREE from 'three';
 
 const MAX_POINTS = 36;
@@ -68,6 +70,9 @@ function makeSprite() {
 const VERT = `
 attribute float aPhase;
 attribute float aPeriod;
+attribute float aSize;
+attribute float aEmber;
+varying float vEmber;
 uniform float uTime;
 uniform float uSize;
 uniform float uScale;
@@ -76,9 +81,13 @@ void main() {
   float w = 6.2831853 * uTime / aPeriod + aPhase;
   float s = 0.5 + 0.5 * sin(w);
   vTw = 0.30 + 0.70 * s;
+  // Occasional brighter flare: a rare narrow peak on a slow harmonic.
+  float flare = pow(0.5 + 0.5 * sin(w * 0.23 + aPhase * 3.1), 16.0);
+  vTw += flare * 1.6;
+  vEmber = aEmber;
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   float breathe = 1.0 + 0.18 * sin(w + 1.3);
-  gl_PointSize = uSize * breathe * uScale / max(0.1, -mv.z);
+  gl_PointSize = uSize * aSize * breathe * uScale / max(0.1, -mv.z);
   gl_Position = projectionMatrix * mv;
 }
 `;
@@ -86,13 +95,16 @@ void main() {
 const FRAG = `
 uniform sampler2D uMap;
 uniform vec3 uColor;
+uniform vec3 uEmberColor;
+varying float vEmber;
 uniform float uOpacity;
 varying float vTw;
 void main() {
   vec4 tex = texture2D(uMap, gl_PointCoord);
   float a = tex.a * vTw * uOpacity;
   if (a < 0.004) discard;
-  gl_FragColor = vec4(uColor * tex.rgb, a);
+  vec3 col = mix(uColor, uEmberColor, vEmber);
+  gl_FragColor = vec4(col * tex.rgb, a);
 }
 `;
 
@@ -107,6 +119,7 @@ let twPhase = null;
 let twPeriod = null;
 let birthAt = null;
 let born = null;
+let emberFlag = null;
 let t0 = 0;
 
 export function weatherActive() {
@@ -118,6 +131,8 @@ export function beginWeather(scene, center) {
   const pos = new Float32Array(MAX_POINTS * 3);
   const phaseArr = new Float32Array(MAX_POINTS);
   const periodArr = new Float32Array(MAX_POINTS);
+  const sizeArr = new Float32Array(MAX_POINTS);
+  const emberArr = new Float32Array(MAX_POINTS);
   angle = new Float32Array(MAX_POINTS);
   frac = new Float32Array(MAX_POINTS);
   riseSpeed = new Float32Array(MAX_POINTS);
@@ -126,6 +141,7 @@ export function beginWeather(scene, center) {
   twPeriod = new Float32Array(MAX_POINTS);
   birthAt = new Float32Array(MAX_POINTS);
   born = new Array(MAX_POINTS).fill(false);
+  emberFlag = new Float32Array(MAX_POINTS);
   for (let i = 0; i < MAX_POINTS; i++) {
     angle[i] = hash01(i, 13) * Math.PI * 2;
     frac[i] = Math.sqrt(hash01(i, 5));
@@ -133,6 +149,17 @@ export function beginWeather(scene, center) {
     spin[i] = (hash01(i, 47) * 2 - 1) * 0.15;
     twPhase[i] = hash01(i, 71) * Math.PI * 2;
     twPeriod[i] = 0.8 + 0.8 * hash01(i, 83);
+    // A minority of larger, slower embers (~1 in 5): deeper gold, drifting
+    // up at half pace with a longer twinkle. Count and cone unchanged.
+    emberFlag[i] = hash01(i, 111) < 0.2 ? 1 : 0;
+    if (emberFlag[i]) {
+      sizeArr[i] = 1.9 + 0.9 * hash01(i, 113);
+      riseSpeed[i] *= 0.45;
+      twPeriod[i] *= 1.8;
+    } else {
+      sizeArr[i] = 0.85 + 0.3 * hash01(i, 115);
+    }
+    emberArr[i] = emberFlag[i];
     birthAt[i] = hash01(i, 91) * BIRTH_SPAN;
     phaseArr[i] = twPhase[i];
     periodArr[i] = twPeriod[i];
@@ -145,10 +172,13 @@ export function beginWeather(scene, center) {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('aPhase', new THREE.BufferAttribute(phaseArr, 1));
   geo.setAttribute('aPeriod', new THREE.BufferAttribute(periodArr, 1));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(sizeArr, 1));
+  geo.setAttribute('aEmber', new THREE.BufferAttribute(emberArr, 1));
   mat = new THREE.ShaderMaterial({
     uniforms: {
       uMap: { value: makeSprite() },
       uColor: { value: new THREE.Color(0xffe9c4) },
+      uEmberColor: { value: new THREE.Color(0xff9a4d) },
       uOpacity: { value: 0 },
       uTime: { value: 0 },
       uSize: { value: 0.3 },
@@ -208,5 +238,5 @@ export function endWeather() {
   geo = null;
   if (mat) mat.dispose();
   mat = null;
-  angle = frac = riseSpeed = spin = twPhase = twPeriod = birthAt = born = null;
+  angle = frac = riseSpeed = spin = twPhase = twPeriod = birthAt = born = emberFlag = null;
 }

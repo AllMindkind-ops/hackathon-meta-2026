@@ -44,6 +44,8 @@ let seq = 0;
 let layer = null;   // outer #release: centering + fray (blur/fade/spacing)
 let kicker = null;  // inner .rkick: impact offset/rotation
 let letters = [];
+let sparkBox = null; // absolute-positioned spark layer inside the host
+let live = [];       // active sparks: { el, x0, y0, vx, vy, t0, dur }
 const kick = { x: 0, y: 0, r: 0 };
 
 export function releaseActive() {
@@ -60,6 +62,10 @@ export function beginRelease(text) {
   const inner = document.createElement('div');
   inner.className = 'rkick';
   host.appendChild(inner);
+  sparkBox = document.createElement('div');
+  sparkBox.className = 'rsparks';
+  host.appendChild(sparkBox);
+  live = [];
   const n = text.length;
   letters = [];
   for (let i = 0; i < n; i++) {
@@ -68,6 +74,23 @@ export function beginRelease(text) {
     s.textContent = text[i] === ' ' ? ' ' : text[i];
     letters.push({
       el: s,
+      i,
+      // Pre-scattered spark casts: 3 trail wisps shed at rise start, 5 burst
+      // sparks on burnout. Velocities in host px, durations in ms.
+      trail: [0, 1, 2].map((k) => ({
+        vx: (hash01(i * 5 + k, seed + 31) * 2 - 1) * 14,
+        vy: -10 - 24 * hash01(i * 5 + k, seed + 37),
+        dur: 500 + 400 * hash01(i * 5 + k, seed + 41),
+      })),
+      burst: [0, 1, 2, 3, 4].map((k) => {
+        const a = hash01(i * 7 + k, seed + 53) * Math.PI * 2;
+        const sp = 20 + 35 * hash01(i * 7 + k, seed + 59);
+        return {
+          vx: Math.cos(a) * sp,
+          vy: Math.sin(a) * sp - 18,
+          dur: 350 + 300 * hash01(i * 7 + k, seed + 61),
+        };
+      }),
       threshold: SHED_START + (SHED_END - SHED_START) * hash01(i, seed),
       dur: 1200 + 800 * hash01(i + n + 7, seed),
       rise: 40 + 80 * hash01(i * 3 + 1, seed + 11),
@@ -95,6 +118,26 @@ export function kickRelease(strength, hitId) {
   kick.r += dir * k * 3;
 }
 
+// Ember sparks: tiny gold dots living in the host's own pixel space. The host
+// is fixed-positioned, so absolute children track the letters exactly; each
+// letter's start centre is captured once, at its own shed moment.
+function letterCX(L) {
+  const r = L.el.getBoundingClientRect();
+  const h = layer.getBoundingClientRect();
+  return r.left + r.width / 2 - h.left;
+}
+function letterCY(L) {
+  const r = L.el.getBoundingClientRect();
+  const h = layer.getBoundingClientRect();
+  return r.top + r.height / 2 - h.top;
+}
+function spawnSpark(x0, y0, vx, vy, now, dur) {
+  if (!sparkBox) return;
+  const el = document.createElement('span');
+  el.className = 'spark';
+  sparkBox.appendChild(el);
+  live.push({ el, x0, y0, vx, vy, t0: now, dur });
+}
 export function updateRelease(factor, dt, now) {
   if (!layer) return;
   const d = Math.exp(-3 * Math.max(0, dt));
@@ -109,20 +152,43 @@ export function updateRelease(factor, dt, now) {
   layer.style.filter = factor > 0.001 ? `blur(${(factor * 2).toFixed(2)}px)` : '';
   layer.style.opacity = String(1 - 0.25 * factor);
   layer.style.letterSpacing = `${(factor * 0.35).toFixed(3)}em`;
+  for (let si = live.length - 1; si >= 0; si--) {
+    const sp = live[si];
+    const sq = (now - sp.t0) / sp.dur;
+    if (sq >= 1) {
+      sp.el.remove();
+      live.splice(si, 1);
+      continue;
+    }
+    const se = sq * sq * (3 - 2 * sq);
+    sp.el.style.transform =
+      `translate(${(sp.x0 + sp.vx * se).toFixed(1)}px, ${(sp.y0 + sp.vy * se - 24 * se * se).toFixed(1)}px)`;
+    sp.el.style.opacity = String(1 - sq);
+  }
   for (const L of letters) {
     if (L.done) continue;
     if (L.t0 < 0) {
       if (factor < L.threshold) continue;
       L.t0 = now;
+      // Shed moment: capture the centre and lay the trail wisps. The letter
+      // keeps rising past them, which reads as a trail.
+      L.x0 = letterCX(L);
+      L.y0 = letterCY(L);
+      for (const t of L.trail) spawnSpark(L.x0, L.y0, t.vx, t.vy, now, t.dur);
     }
     const q = Math.min(1, (now - L.t0) / L.dur);
     const e = q * q * (3 - 2 * q);
     L.el.style.transform =
       `translate(${(L.drift * e).toFixed(1)}px, ${(-L.rise * e).toFixed(1)}px)` +
       ` rotate(${(L.rot * e).toFixed(1)}deg)`;
+    // Ember-gold flash for the first breath of the shed, then back to stone.
+    L.el.style.color = q < 0.3 ? '#ffc45e' : '';
     L.el.style.opacity = String(1 - e);
     if (q >= 1) {
       L.done = true;
+      // Burnout: the letter ends as sparks from its final risen spot,
+      // not a plain fade.
+      for (const b of L.burst) spawnSpark(L.x0 + L.drift, L.y0 - L.rise, b.vx, b.vy, now, b.dur);
       L.el.style.visibility = 'hidden';
     }
   }
@@ -132,6 +198,8 @@ export function endRelease() {
   if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
   layer = null;
   kicker = null;
+  sparkBox = null;
+  live = [];
   letters = [];
   kick.x = kick.y = kick.r = 0;
 }
