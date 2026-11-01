@@ -55,16 +55,15 @@ export function createAvatar() {
   }
   const skin = new THREE.MeshStandardMaterial({ map: faceTexture(), roughness: 0.85 });
 
-  // Boots: rounded black nubs, lowest point at y = 0 (feet at origin).
-  const bootGeo = new THREE.SphereGeometry(0.07, 6, 5);
-  for (const x of [-0.09, 0.09]) {
-    const boot = new THREE.Mesh(bootGeo, bootMat);
-    boot.position.set(x, 0.07, 0.02);
-    avatar.add(boot);
-  }
-
   // Legs: hip pivots so each leg swings from the hip joint.
+  // Boots: rounded black nubs, children of the hip pivots (NOT the avatar
+  // group) so they ride the legs through the flail -- a group-parented boot
+  // keeps its group-space offset while the leg rotates away from it, which
+  // reads as a detached boot tumbling beside the leg. Local (0, -0.45, 0.02)
+  // reproduces the exact rest alignment (group-space y = 0.52 - 0.45 = 0.07),
+  // lowest point still at y = 0 (feet at origin).
   const legGeo = new THREE.CapsuleGeometry(0.055, 0.32, 2, 6);
+  const bootGeo = new THREE.SphereGeometry(0.07, 6, 5);
   for (const [name, x] of [['hipL', -0.09], ['hipR', 0.09]]) {
     const hip = new THREE.Group();
     hip.name = name;
@@ -73,6 +72,9 @@ export function createAvatar() {
     const leg = new THREE.Mesh(legGeo, suit);
     leg.position.y = -0.21;
     hip.add(leg);
+    const boot = new THREE.Mesh(bootGeo, bootMat);
+    boot.position.set(0, -0.45, 0.02);
+    hip.add(boot);
     avatar.add(hip);
   }
 
