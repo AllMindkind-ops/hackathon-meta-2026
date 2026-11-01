@@ -32,13 +32,22 @@ export const BODY_RADIUS = 0.7;
 export const GRAVITY = -5.5;
 // Gravity ease-in (Round D.2): the fall starts light and gathers weight.
 // GRAVITY_START at launch, rising by smoothstep to exactly 1.0 at
-// GRAVITY_FULL_D (first quarter of descent), standard gravity below that,
-// forever. MOOD-independent: it is physics.
+// the dealt finish (SHORT 0.15 / LONG 0.25), standard gravity below that,
+// forever. MOOD loads only the ramp's finish line; every value downstream
+// (start weight, curve, restitution, all contacts) never varies with MOOD.
 export const GRAVITY_START = 0.6;
-export const GRAVITY_FULL_D = 0.25;
-function gravityMultiplier(d) {
-  if (d >= GRAVITY_FULL_D) return 1;
-  const t = Math.min(Math.max(d / GRAVITY_FULL_D, 0), 1);
+export const GRAVITY_RAMP_SHORT = 0.15;
+export const GRAVITY_RAMP_LONG = 0.25;
+// MOOD loads the dice: probability of drawing the LONG finish, by MOOD.
+// GRAVITY_START and everything downstream never vary with MOOD.
+const RAMP_LONG_P = { SOLEMN: 0.65, RITUAL: 0.5, 'FUCK YES': 0.35 };
+function dealRampFull(mood) {
+  const pLong = RAMP_LONG_P[mood] ?? 0.5;
+  return Math.random() < pLong ? GRAVITY_RAMP_LONG : GRAVITY_RAMP_SHORT;
+}
+function gravityMultiplier(d, full) {
+  if (d >= full) return 1;
+  const t = Math.min(Math.max(d / full, 0), 1);
   const e = t * t * (3 - 2 * t);
   return GRAVITY_START + (1 - GRAVITY_START) * e;
 }
@@ -326,6 +335,7 @@ export function createFall(spawn, scenery) {
   // camera key off) and the live multiplier shown in the readout as grav=.
   let fallDescentMax = 0;
   let gravNow = 1;
+  let rampFullD = GRAVITY_RAMP_LONG;
   let zoneTime = 0;
   let airSinceContact = 0;
   let touching = false;
@@ -354,10 +364,11 @@ export function createFall(spawn, scenery) {
   }
 
   // Jump: teleport to the chute top with one outward impulse. Facts restart.
-  function launch() {
+  function launch(mood = 'RITUAL') {
     placeAt(launchPos, LAUNCH_VEL);
     fallDescentMax = 0;
     gravNow = GRAVITY_START;
+    rampFullD = dealRampFull(mood);
     facts.phase = 'falling';
     facts.time = 0;
     facts.impacts = 0;
@@ -428,7 +439,7 @@ export function createFall(spawn, scenery) {
       const _gd = body.position;
       const _dNow = Math.min(1, Math.max((launchPos.y - _gd.y) / (launchPos.y - LAND_REF_Y), 0));
       if (_dNow > fallDescentMax) fallDescentMax = _dNow;
-      gravNow = gravityMultiplier(fallDescentMax);
+      gravNow = gravityMultiplier(fallDescentMax, rampFullD);
       world.gravity.set(0, GRAVITY * gravNow, 0);
       world.step(1 / 60, dt, 3);
       facts.time += dt;
@@ -552,6 +563,7 @@ export function createFall(spawn, scenery) {
       airborne: facts.phase === 'falling' && !touching,
       impact: lastImpact.strength * Math.exp(-3 * lastImpact.age),
       grav: gravNow,
+      ramp: Math.round(rampFullD * 100),
     };
   }
 
