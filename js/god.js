@@ -1,6 +1,6 @@
 // Gods' first pass: summit intention + MOOD, and the VERDICT after a fall.
 // The character sheet is law. This module owns three things:
-//   1. the dice (shape / disposition / silence), rolled client-side on landing;
+//   1. the dice (shape / disposition / silence / numbers), rolled client-side on landing;
 //   2. the call (POST { system: SHEET_TEXT, bundle } to GOD_ENDPOINT);
 //   3. the fallback verdict bank (local templates in the gods' grammar).
 // GOD_ENDPOINT is the live worker URL. No API key anywhere in the repo, ever:
@@ -14,7 +14,10 @@ export const GOD_ENDPOINT = 'https://god-voice.mybrainhasagiftshop.workers.dev';
 
 // SHEET_TEXT: the voice law handed to the model. Faithful condensation of
 // the character sheet: jurisdiction, prohibitions, spectacle rule, meaning
-// rule, Roman disposition, restraint, and MOOD as temperature only.
+// rule, fresh coinage, ban list, engagement, register protection, numbers
+// law, restraint, and MOOD as temperature only. No example phrases and no
+// sample lines anywhere below: quoted lines become tics, so the law states
+// every rule abstractly and each verdict coins its own words.
 export const SHEET_TEXT = [
   'You are the gods of this mountain: ancient witnesses formed in the sky,',
   'one collective "we" that occasionally shows seams of internal disagreement.',
@@ -26,29 +29,50 @@ export const SHEET_TEXT = [
   'your mountain -- what you witnessed -- and nothing else. Not the mortal\'s',
   'future, motives, worth, health, or life. You never advise, diagnose,',
   'predict, punish, moralize, encourage, cheerlead, or use therapy-speak.',
-  'You celebrate the SPECTACLE, never the mortal as a person.',
-  '"GLORIOUS COLLISION!" is allowed; "YOU ARE AMAZING, YOU CAN DO IT!" is',
-  'forbidden. The verdict confers MEANING, not moral value: what kind of',
+  'You celebrate the SPECTACLE, never the mortal as a person. All praise',
+  'belongs to what happened in the air and on the rock -- the shape of the',
+  'event -- and none to the worth of the one who fell. No praise of the',
+  'mortal, no second-person uplift, ever.',
+  'The verdict confers MEANING, not moral value: what kind of',
   'offering this fall became. A pathetic fall can receive a magnificent',
-  'verdict; a beautiful fall can be punctured ("Beautiful. Also vain.").',
+  'verdict; a beautiful fall can be punctured.',
   'Voice: formal, declarative, pronouncement-like. Short unhedged sentences',
   'in which the fall is simply fact. (This tone is named Roman. It is only',
   'a tone of speech: not a visual design, not a mouth, not a costume. You',
   'have no body and describe none.) Restraint is the weight: the verdict is',
   'complete when you stop speaking, not when the mortal understands.',
-  'Tone anchors: "We have witnessed worse. Not often." / "You hesitated at',
-  'the edge. The mountain did not." / "Two stones received you. The third',
-  'was unnecessary." / "There was no',
-  'grace in it. There was, however, commitment." / "It is done."',
+  'FRESH COINAGE AS LAW: every spectacle name and every flourish is coined',
+  'fresh from this fall\'s specifics -- its strike, its bounce, its',
+  'stillness. Stock phrases are forbidden. If a phrase could have described',
+  'any fall, it cannot describe this one.',
+  'THE SESSION LOG IS A BAN LIST: the bundle\'s session entries are spent',
+  'material. Phrases, sentence skeletons, and closers from earlier verdicts',
+  'this session must not recur. The log is a ban list, not a style memory:',
+  'never repeat, vary, or answer your own earlier verdicts.',
+  'ENGAGEMENT: when an intention was left and the shape is DETAIL1, DETAIL2,',
+  'or CHAPTERS3, the verdict must have engaged the intention by its final',
+  'sentence -- witnessed it, named what it became, or answered it by image.',
+  'Engagement is never answering a question as a question, and never',
+  'granting a petition. PURE1 may engage by image alone, or not at all.',
+  'REGISTER PROTECTION: a small, sad, or tender intention is witnessed in',
+  'its own register at every MOOD, including FUCK YES. Spectacle never',
+  'steamrolls a quiet offering: the tender stays tender, the small stays',
+  'small.',
+  'NUMBERS LAW: at most one sentence per verdict may be predominantly',
+  'statistical; numbers ride inside meaning-carrying sentences and never',
+  'open a verdict as a bare stat line; a CHAPTERS3 verdict\'s final sentence',
+  'is meaning or boundary, never statistics. When the bundle\'s numbers flag',
+  'is false, the verdict cites no numerals at all: witnessed detail goes',
+  'qualitative -- the strike, the bounce, the stillness -- without counts.',
   'MOOD is the mortal\'s session setting and changes your TEMPERATURE, not',
   'your identity. SOLEMN: still, grave, tender without sentimentality;',
   'humor rare, dry, almost accidental. RITUAL: the rite as normally',
   'performed; warm, relaxed, fond, amused. FUCK YES: wild, theatrical,',
   'petty, absurd grandeur, with a hard ceiling on neediness -- extravagant',
-  'yes, trying to entertain no; even at maximum you remain capable of "It',
-  'is done." MOOD never changes what you witnessed: a pathetic fall stays',
-  'pathetic at every setting. You may gently depart from the set MOOD when',
-  'the fall warrants it.',
+  'yes, trying to entertain no; even at maximum you remain capable of a',
+  'single still sentence. MOOD never changes what you witnessed: a pathetic',
+  'fall stays pathetic at every setting. You may gently depart from the set',
+  'MOOD when the fall warrants it.',
   'You are dealt a SHAPE and a DISPOSITION. Obey them exactly. SHAPE:',
   'DETAIL2 (witnessed detail, then meaning -- exactly 2 sentences), DETAIL1',
   '(a single witnessed-detail sentence -- exactly 1 sentence), PURE1 (pure',
@@ -130,11 +154,13 @@ export function rollSilence() {
 }
 
 // The dice, rolled client-side when a fall lands, before any god call.
+// `numbers` deals whether numerals appear at all: roughly 60% true.
 export function rollDice(mood, fallFacts) {
   return {
     shape: rollShape(fallFacts),
     disposition: rollDisposition(mood),
     silenceMs: rollSilence(),
+    numbers: Math.random() < 0.6,
   };
 }
 
@@ -145,8 +171,13 @@ export function rollDice(mood, fallFacts) {
 // line so the audit can count terminals per line.
 // Detail templates cite real bundle numbers only: {n} impacts, {strongest}
 // m/s, {bounces}, {duration} s, {airtime} s air, {maxspeed} m/s peak.
+// Numbers ride inside event-led sentences: no template opens with a bare
+// stat recital, and no CHAPTERS3 template closes on statistics.
 // {kept} is the mortal's intention in quotes, or "silence" when none was
 // left. PURE1 lines are genuinely detail-free: no numbers, no named events.
+// When the bundle's numbers flag is false the QUAL bank answers instead:
+// same shapes, dispositions, and budgets, witnessed detail gone qualitative,
+// no numerals anywhere.
 // No two CHAPTERS3 templates share an opening scaffold, and no closing line
 // appears more than twice in the whole bank.
 const BANK = {
@@ -157,11 +188,11 @@ const BANK = {
         'It is done, and it was sufficient.',
       ],
       [
-        '{bounces} times the slope returned you to the air, for {airtime} seconds in all.',
+        'The slope returned you to the air {bounces} times, for {airtime} seconds in all.',
         'Such persistence has a shape, and we have named it.',
       ],
       [
-        'For {duration} seconds you belonged to the fall, peaking at {maxspeed} metres per second.',
+        'You belonged to the fall, and it kept you {duration} seconds to a peak of {maxspeed} metres per second.',
         'The offering is received in full.',
       ],
       [
@@ -175,7 +206,7 @@ const BANK = {
         'It has revised the budget grudgingly.',
       ],
       [
-        '{airtime} seconds of airtime and {n} impacts, with paperwork to match.',
+        'You logged {airtime} seconds of airtime and {n} impacts, with paperwork to match.',
         'Filed under offerings, stamped, done.',
       ],
       [
@@ -189,19 +220,19 @@ const BANK = {
     ],
     indifferent: [
       [
-        '{n} impacts, hardest {strongest} metres per second.',
+        'The rock met you {n} times, hardest at {strongest} metres per second.',
         'Entered into the record.',
       ],
       [
-        '{bounces} bounces across {duration} seconds, {airtime} of them airborne.',
+        'You crossed {duration} seconds with {bounces} bounces, {airtime} of them airborne.',
         'The mountain remains, and so do you.',
       ],
       [
-        'Peak {maxspeed} metres per second with {airtime} seconds of air.',
+        'You peaked at {maxspeed} metres per second on {airtime} seconds of air.',
         'The figures stand as read.',
       ],
       [
-        'The fall lasted {duration} seconds and struck {n} times.',
+        'You fell {duration} seconds and struck {n} times.',
         'We witnessed it to the end.',
       ],
     ],
@@ -209,21 +240,21 @@ const BANK = {
   DETAIL1: {
     grand: [
       ['You met the rock {n} times and rose from every meeting but the last.'],
-      ['For {duration} seconds the mountain had you, and it has kept something of you.'],
+      ['The mountain had you {duration} seconds, and it has kept something of you.'],
       ['The hardest blow came at {strongest} metres per second, and still you continued down.'],
-      ['{bounces} times you left the stone, and {bounces} times the stone reclaimed you.'],
+      ['You left the stone {bounces} times, and {bounces} times it reclaimed you.'],
     ],
     funny: [
       ['You collected {n} impacts and still landed within hearing of our verdict.'],
       ['The mountain rates your {airtime} seconds of airtime highly and your landings poorly.'],
-      ['At {maxspeed} metres per second you were technically flying, only downward.'],
-      ['Of your {bounces} bounces, the second-best was nearly graceful.'],
+      ['You were technically flying at {maxspeed} metres per second, only downward.'],
+      ['Your second-best of {bounces} bounces was nearly graceful.'],
     ],
     indifferent: [
-      ['{n} impacts were recorded.'],
-      ['The fall took {duration} seconds.'],
-      ['Strongest impact: {strongest} metres per second.'],
-      ['{airtime} seconds of it were airborne.'],
+      ['The rock recorded you {n} times.'],
+      ['You gave the fall {duration} seconds.'],
+      ['The strongest impact registered {strongest} metres per second.'],
+      ['Part of it, {airtime} seconds, stayed airborne.'],
     ],
   },
   PURE1: {
@@ -316,16 +347,107 @@ const BANK = {
   },
 };
 
+// QUAL: the numbers-false bank. Same shapes, dispositions, and sentence
+// budgets as BANK; witnessed detail goes qualitative (the strike, the
+// bounce, the stillness) without counts. PURE1 needs no twin: its lines are
+// already numeral-free, so the fallback falls through to BANK for PURE1.
+const QUAL = {
+  DETAIL2: {
+    grand: [
+      [
+        'You struck the rock and rose from each meeting but the last.',
+        'It is done, and it stands.',
+      ],
+      [
+        'The air held you, the slope took you back, and the stillness closed it.',
+        'The offering stands received.',
+      ],
+    ],
+    funny: [
+      [
+        'You bounced, which the mountain had not budgeted for.',
+        'The budget is revised, grudgingly.',
+      ],
+      [
+        'The airtime was considerable and the landings were not.',
+        'Filed, stamped, done.',
+      ],
+    ],
+    indifferent: [
+      [
+        'The rock met you, the hardest meeting noted.',
+        'Entered, and kept.',
+      ],
+      [
+        'You fell, you struck, and it ended.',
+        'We witnessed all of it.',
+      ],
+    ],
+  },
+  DETAIL1: {
+    grand: [
+      ['You met the rock and rose from each meeting but the last.'],
+      ['The mountain held you awhile, and has kept something of you.'],
+    ],
+    funny: [
+      ['You collected bruises and still landed within hearing of our verdict.'],
+      ['The mountain commends your airtime and condemns your landings.'],
+    ],
+    indifferent: [
+      ['The impacts were recorded.'],
+      ['The fall took its time and ended.'],
+    ],
+  },
+  CHAPTERS3: {
+    grand: [
+      [
+        'The edge let you go without remark.',
+        'The middle belonged to the air and the argument with gravity.',
+        'The stone closed the account in full.',
+      ],
+      [
+        'Height was lent, and the rest was negotiation.',
+        'The slope collected its payments without counting them.',
+        'The stillness keeps the final word.',
+      ],
+    ],
+    funny: [
+      [
+        'First act: certainty.',
+        'Act two: unintended flight and revision.',
+        'Act three: the floor, and a kind word from us.',
+      ],
+      [
+        'You began on your feet.',
+        'Then came the falling, the bouncing, and the feeling.',
+        'Then came the stopping, which settles the matter.',
+      ],
+    ],
+    indifferent: [
+      [
+        'The top released you.',
+        'It continued, and struck, and returned to the air.',
+        'It ended below.',
+      ],
+      [
+        'No announcement opened the fall.',
+        'The middle held bounces and a peak, and no comment.',
+        'The fall closed without remark.',
+      ],
+    ],
+  },
+};
+
 function fill(template, bundle) {
   const f = bundle.fall;
   const kept = bundle.intention ? `"${bundle.intention}"` : 'silence';
   const rep = {
     '{n}': String(f.impacts),
-    '{strongest}': f.strongest_impact_ms.toFixed(1),
+    '{strongest}': String(Math.round(f.strongest_impact_ms)),
     '{bounces}': String(f.bounces),
-    '{duration}': f.duration_s.toFixed(0),
-    '{airtime}': f.airtime_s.toFixed(1),
-    '{maxspeed}': f.max_speed_ms.toFixed(1),
+    '{duration}': String(Math.round(f.duration_s)),
+    '{airtime}': String(Math.round(f.airtime_s)),
+    '{maxspeed}': String(Math.round(f.max_speed_ms)),
     '{kept}': kept,
   };
   return template.map((s) => {
@@ -336,7 +458,9 @@ function fill(template, bundle) {
 }
 
 function fallbackVerdict(bundle) {
-  const pool = (BANK[bundle.shape] && BANK[bundle.shape][bundle.disposition]) ||
+  const qual = bundle.numbers === false && QUAL[bundle.shape];
+  const bank = qual || BANK;
+  const pool = (bank[bundle.shape] && bank[bundle.shape][bundle.disposition]) ||
     BANK.DETAIL1.indifferent;
   return fill(pool[Math.floor(Math.random() * pool.length)], bundle);
 }
@@ -349,11 +473,34 @@ function splitSentences(text) {
   return t ? [t] : [];
 }
 
-// The call. POSTs { system: SHEET_TEXT, bundle }; the dealt shape and
-// disposition travel inside the bundle and the response must obey them.
+// Fall facts arrive as raw floats. Round at the source: whole seconds for
+// duration and airtime, whole numbers for strongest impact and peak speed,
+// before anything downstream (endpoint or fallback) can see a decimal.
+// Impacts and bounces are already whole. The numbers deal defaults in when
+// an older caller did not deal it: roughly 60% true.
+function dealtBundle(bundle) {
+  const f = bundle.fall;
+  const round = (v) => Math.round(Number(v));
+  return {
+    ...bundle,
+    numbers: typeof bundle.numbers === 'boolean' ? bundle.numbers : Math.random() < 0.6,
+    fall: {
+      ...f,
+      duration_s: round(f.duration_s),
+      airtime_s: round(f.airtime_s),
+      strongest_impact_ms: round(f.strongest_impact_ms),
+      max_speed_ms: round(f.max_speed_ms),
+    },
+  };
+}
+
+// The call. POSTs { system: SHEET_TEXT, bundle }; the dealt shape,
+// disposition, and numbers flag travel inside the bundle and the response
+// must obey them. Fall facts travel rounded: no decimals, ever.
 // Returns { sentences, source }: source is 'endpoint' only when live text
 // was actually used, else 'fallback'.
 export async function getVerdict(bundle) {
+  const dealt = dealtBundle(bundle);
   if (GOD_ENDPOINT) {
     try {
       const ctrl = new AbortController();
@@ -363,7 +510,7 @@ export async function getVerdict(bundle) {
         res = await fetch(GOD_ENDPOINT, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ system: SHEET_TEXT, bundle }),
+          body: JSON.stringify({ system: SHEET_TEXT, bundle: dealt }),
           signal: ctrl.signal,
         });
       } finally {
@@ -381,7 +528,7 @@ export async function getVerdict(bundle) {
     }
   }
   try {
-    return { sentences: fallbackVerdict(bundle), source: 'fallback' };
+    return { sentences: fallbackVerdict(dealt), source: 'fallback' };
   } catch (e) {
     // Last resort: a throw inside fallback composition must never dead-end
     // the verdict silently. Static PURE1, no slots to fill, always resolves.
