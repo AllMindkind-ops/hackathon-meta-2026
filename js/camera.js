@@ -39,6 +39,15 @@ export const CHASE_ANGLE_DEG = 40;
 export const CHASE_SIDE = 1;
 // Summit -> tracking blend: settled well before the first impact.
 export const CHASE_BLEND_TIME = 1.0;
+// Portrait (viewport taller than wide): the narrow horizontal FOV crops the
+// lateral swing out of frame, so portrait rides nearer behind the fall line
+// with a shorter lead, a smaller drop, and a wider standoff. Landscape is
+// untouched. Blended by _portraitT so rotating mid-fall never cuts.
+export const PORTRAIT_START_ANGLE = 20;
+export const PORTRAIT_END_ANGLE = 50;
+export const PORTRAIT_AIM_LEAD = 0.12;
+export const PORTRAIT_AIM_DROP = 0.35;
+export const PORTRAIT_DIST_MUL = 1.25;
 
 // Chute azimuth (same FACE as js/scene.js): the chase offset and the
 // look-back view align to the fall line, never to the avatar's tumble.
@@ -167,6 +176,9 @@ export function setChaseDistance(d) {
 // of the whole presentation -- tracking side, orbit swing direction, and the
 // spin extras mirror together. Same fall, mirrored.
 let _mirror = 1;
+// Portrait blend 0 (landscape) -> 1 (portrait), damped so a mid-fall rotate
+// travels smoothly instead of cutting.
+let _portraitT = 0;
 export function setMirrorSign(s) {
   _mirror = s < 0 ? -1 : 1;
 }
@@ -286,11 +298,18 @@ export function updateFallCamera(camera, avatar, dt, mode, vel, descent = 0) {
   orbitT = reduced
     ? orbitT * orbitT * orbitT * (orbitT * (orbitT * 6 - 15) + 10)
     : orbitT * orbitT * (3 - 2 * orbitT);
-  const orbitAngle = CHASE_ANGLE_DEG + (ORBIT_END_ANGLE - CHASE_ANGLE_DEG) * orbitT;
+  _portraitT += ((camera.aspect < 1 ? 1 : 0) - _portraitT) * (1 - Math.exp(-3 * dts));
+  const pT = Math.min(Math.max(_portraitT, 0), 1);
+  const startAng = CHASE_ANGLE_DEG + (PORTRAIT_START_ANGLE - CHASE_ANGLE_DEG) * pT;
+  const endAng = ORBIT_END_ANGLE + (PORTRAIT_END_ANGLE - ORBIT_END_ANGLE) * pT;
+  const aimLead = AIM_LEAD + (PORTRAIT_AIM_LEAD - AIM_LEAD) * pT;
+  const aimDrop = AIM_DROP + (PORTRAIT_AIM_DROP - AIM_DROP) * pT;
+  const distMul = 1 + (PORTRAIT_DIST_MUL - 1) * pT;
+  const orbitAngle = startAng + (endAng - startAng) * orbitT;
   // Settle: the band glides Act 1 -> Act 2 across the orbit; zoom clamps
   // follow the active (interpolated) band.
-  _bandMin = ACT1_DIST_MIN + (ACT2_DIST_MIN - ACT1_DIST_MIN) * orbitT;
-  _bandMax = ACT1_DIST_MAX + (ACT2_DIST_MAX - ACT1_DIST_MAX) * orbitT;
+  _bandMin = (ACT1_DIST_MIN + (ACT2_DIST_MIN - ACT1_DIST_MIN) * orbitT) * distMul;
+  _bandMax = (ACT1_DIST_MAX + (ACT2_DIST_MAX - ACT1_DIST_MAX) * orbitT) * distMul;
   // Chase: deliberate damped distance, never terrain-driven.
   const target = THREE.MathUtils.clamp(chaseDistance, _bandMin, _bandMax);
   if (_blending) {
@@ -325,9 +344,9 @@ export function updateFallCamera(camera, avatar, dt, mode, vel, descent = 0) {
   // upper-center with slope visible below her.
   _look.set(avatar.position.x, avatar.position.y + 0.65, avatar.position.z);
   if (vel) {
-    _look.addScaledVector(_vel.set(vel.x, vel.y, vel.z), AIM_LEAD);
+    _look.addScaledVector(_vel.set(vel.x, vel.y, vel.z), aimLead);
   }
-  _look.y -= AIM_DROP;
+  _look.y -= aimDrop;
   if (!_lookInit) {
     _lookSm.copy(_look);
     _lookInit = true;
@@ -399,7 +418,7 @@ export function updateFallCamera(camera, avatar, dt, mode, vel, descent = 0) {
 // (<= 1.2 s) so the ride is settled before the first impact. Distance snaps
 // so framing is right from frame one; position never teleports.
 export function snapChaseCamera(camera, avatar, vel) {
-  void camera;
+  _portraitT = camera.aspect < 1 ? 1 : 0;
   void avatar;
   void vel;
   _blending = true;
