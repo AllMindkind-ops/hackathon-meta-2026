@@ -522,11 +522,12 @@ function createSky(sunDir) {
         float s = max(dot(normalize(vDir), sunDir), 0.0);
         col += glow * (pow(s, 350.0) * 1.2 + pow(s, 8.0) * 0.22);
         // Soft cloud variation: two low octaves of value noise on a planar
-        // projection, height-masked so the horizon stays clean and scaled
-        // down where the sun glow dominates. Same-hue luminance only.
+        // projection, running from the horizon up through the visible band.
+        // Only the brightest core of the sun glow stays clean, so overlay
+        // text and embers keep their contrast. Same-hue luminance only.
         vec2 cuv = vDir.xz / (0.35 + max(vDir.y, 0.02));
         float cl = snoise(cuv * 3.0) * 0.6 + snoise(cuv * 7.0) * 0.4;
-        float cmask = smoothstep(0.05, 0.35, vDir.y) * (1.0 - clamp(pow(s, 8.0) * 1.2, 0.0, 0.7));
+        float cmask = smoothstep(0.0, 0.06, vDir.y) * (1.0 - clamp(pow(s, 350.0) * 1.5, 0.0, 1.0));
         col *= 1.0 + (cl - 0.5) * 0.22 * cmask;
         float band = sin(vDir.y * 46.0 + atan(vDir.z, vDir.x) * 2.0) * 0.5 + 0.5;
         float bandM = smoothstep(0.03, 0.12, vDir.y) * (1.0 - smoothstep(0.12, 0.3, vDir.y));
