@@ -132,10 +132,14 @@ function letterCY(L) {
   const h = layer.getBoundingClientRect();
   return r.top + r.height / 2 - h.top;
 }
-function spawnSpark(x0, y0, vx, vy, now, dur, sz = 0) {
+function spawnSpark(x0, y0, vx, vy, now, dur, sz = 0, hot = false) {
   if (!sparkBox) return;
   const el = document.createElement('span');
   el.className = 'spark';
+  if (hot) {
+    el.style.background = '#ff9d4d';
+    el.style.boxShadow = '0 0 8px 3px rgba(255,157,77,0.9)';
+  }
   if (sz > 0) {
     el.style.width = `${sz.toFixed(1)}px`;
     el.style.height = `${sz.toFixed(1)}px`;
@@ -189,14 +193,14 @@ export function updateRelease(factor, dt, now) {
       `translate(${(L.drift * e).toFixed(1)}px, ${(-L.rise * e).toFixed(1)}px)` +
       ` rotate(${(L.rot * e).toFixed(1)}deg)`;
     // Ember-gold flash for the first breath of the shed, then back to stone.
-    L.el.style.color = q < 0.45 ? '#ffd77e' : '';
-    L.el.style.textShadow = q < 0.45 ? '0 0 12px rgba(255,180,90,0.9), 0 1px 6px rgba(0,0,0,0.8)' : '';
+    L.el.style.color = q < 0.45 ? '#ff9d4d' : '';
+    L.el.style.textShadow = q < 0.45 ? '0 0 12px rgba(255,157,77,0.95), 0 1px 6px rgba(0,0,0,0.8)' : '';
     L.el.style.opacity = String(1 - e);
     if (q >= 1) {
       L.done = true;
       // Burnout: the letter ends as sparks from its final risen spot,
       // not a plain fade.
-      for (const b of L.burst) spawnSpark(L.x0 + L.drift, L.y0 - L.rise, b.vx, b.vy, now, b.dur, b.sz);
+      for (const b of L.burst) spawnSpark(L.x0 + L.drift, L.y0 - L.rise, b.vx, b.vy, now, b.dur, b.sz, true);
       L.el.style.visibility = 'hidden';
     }
   }
