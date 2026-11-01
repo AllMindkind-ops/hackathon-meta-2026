@@ -73,6 +73,11 @@ html, body {
   color: rgba(242, 236, 221, 0.6);
 }
 
+#count {
+  font: 11px/1 system-ui, sans-serif;
+  color: #8a7a5c;
+  text-align: right;
+}
 #mood {
   display: flex;
   gap: 6px;

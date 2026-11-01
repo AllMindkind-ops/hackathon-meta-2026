@@ -169,6 +169,7 @@ function doReset() {
   endRelease();
   endWeather();
   if (ui.intention) ui.intention.value = '';
+  if (ui.count) ui.count.textContent = '0 / 1000';
   if (ui.summit) ui.summit.style.opacity = '';
   fall.resetToTop();
   resetVisualTumble(avatar);
@@ -191,6 +192,12 @@ ui.nextClose.addEventListener('click', () => setNextVisible(ui, false));
 ui.next.addEventListener('click', (e) => {
   if (e.target === ui.next) setNextVisible(ui, false);
 });
+// Quiet character counter: live "n / 1000" as she types or pastes.
+if (ui.intention) {
+  ui.intention.addEventListener('input', () => {
+    if (ui.count) ui.count.textContent = `${ui.intention.value.length} / 1000`;
+  });
+}
 ui.button.addEventListener('click', () => {
   const phase = fall.getState().phase;
   if (phase === 'landed') doReset();

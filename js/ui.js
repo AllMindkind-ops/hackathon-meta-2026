@@ -13,6 +13,7 @@ export function getUI() {
     facts: document.getElementById('facts'),
     summit: document.getElementById('summit'),
     intention: document.getElementById('intention'),
+    count: document.getElementById('count'),
     moodBox: document.getElementById('mood'),
     verdict: document.getElementById('verdict'),
     nextBtn: document.getElementById('nextbtn'),
