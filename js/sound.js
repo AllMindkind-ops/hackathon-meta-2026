@@ -21,6 +21,7 @@ export const LANDING_DUR_S = 0.4;
 export const SCRAPE_BAND_HZ = 900;
 export const SCRAPE_BAND_Q = 1.4;
 export const SCRAPE_MIN_SPEED = 1.0;
+export const SCRAPE_SUSTAIN_S = 0.3;
 export const SCRAPE_MAX_GAIN = 0.22;
 export const SCRAPE_ATTACK_S = 0.03;
 export const SCRAPE_RELEASE_S = 0.12;
@@ -40,6 +41,7 @@ function stub() {
     setMuted() {},
     isMuted: () => false,
     getThumpCount: () => 0,
+    getScrapeTime: () => 0,
     resetThumpCount() {},
   };
 }
@@ -59,6 +61,9 @@ export function initSound() {
   let pendingStrongest = 0;
   let gapTimer = null;
   let thumpCount = 0;
+  let dragTimer = 0;
+  let gateOpen = false;
+  let gateOpenTime = 0;
   function buildGraph() {
     ctx = new AC();
     master = ctx.createGain();
@@ -169,19 +174,29 @@ export function initSound() {
     playThump(v, landing);
   }
 
-  // Continuous scrape. The target is zero by construction whenever the
-  // body is airborne (!touching) or still, so air is silent; smoothing
-  // via setTargetAtTime (attack ~30 ms, release ~120 ms) avoids clicks.
+  // Continuous scrape (sound 1.3): keyed on contact-POINT drag, behind
+  // a sustain gate. True drag must hold continuously for SCRAPE_SUSTAIN_S
+  // before any sound; any break (contact lost or drag dropout) resets the
+  // timer to zero. While the gate is closed the target is 0, exactly as
+  // when airborne. Past the gate: bandpass character, gain and rate from
+  // drag speed, and the existing release when drag ends.
   function update(dt, contact) {
     if (!ctx || ctx.state !== 'running' || !scrapeGain) return;
-    void dt;
+    const drag = (contact && contact.touching) ? contact.slideSpeed : 0;
+    if (!muted && contact && contact.touching && drag > SCRAPE_MIN_SPEED) {
+      dragTimer += dt;
+    } else {
+      dragTimer = 0;
+      gateOpen = false;
+    }
+    if (!gateOpen && dragTimer >= SCRAPE_SUSTAIN_S) gateOpen = true;
     let target = 0;
     let rate = 0.7;
-    if (!muted && contact && contact.touching
-        && contact.slideSpeed > SCRAPE_MIN_SPEED) {
-      target = Math.min(1, contact.slideSpeed / 12) * SCRAPE_MAX_GAIN;
-      rate = 0.7 + Math.min(1, contact.slideSpeed / 15) * 0.6;
+    if (gateOpen && !muted) {
+      target = Math.min(1, drag / 12) * SCRAPE_MAX_GAIN;
+      rate = 0.7 + Math.min(1, drag / 15) * 0.6;
     }
+    if (gateOpen) gateOpenTime += dt;
     const now = ctx.currentTime;
     const tau = target > scrapeGain.gain.value
       ? SCRAPE_ATTACK_S : SCRAPE_RELEASE_S;
@@ -235,8 +250,12 @@ export function initSound() {
     setMuted,
     isMuted: () => muted,
     getThumpCount: () => thumpCount,
+    getScrapeTime: () => gateOpenTime,
     resetThumpCount() {
       thumpCount = 0;
+      gateOpenTime = 0;
+      dragTimer = 0;
+      gateOpen = false;
       gapUntil = 0;
       pendingStrongest = 0;
       if (gapTimer !== null) {

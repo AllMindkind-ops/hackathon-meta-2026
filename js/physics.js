@@ -313,9 +313,8 @@ export function createFall(spawn, scenery) {
   // velocity, notified from the counting point below. The counting
   // criteria are untouched; this changes no physics behavior.
   const impactListeners = new Set();
-  // Latest contact normal (unit; sign irrelevant for the tangent
-  // projection) for the scrape slide-speed computation below.
-  let contactNx = 0, contactNy = 1, contactNz = 0;
+  // Sound 1.3: scrape keys on contact-POINT drag (body velocity plus
+  // spin cross contact offset), computed live in getContact() below.
   let settle = 0;
   let zoneTime = 0;
   let airSinceContact = 0;
@@ -421,8 +420,6 @@ export function createFall(spawn, scenery) {
       for (const c of world.contacts) {
         if (c.bi === body || c.bj === body) {
           touching = true;
-          const nl = Math.hypot(c.ni.x, c.ni.y, c.ni.z) || 1;
-          contactNx = c.ni.x / nl; contactNy = c.ni.y / nl; contactNz = c.ni.z / nl;
           break;
         }
       }
@@ -508,13 +505,37 @@ export function createFall(spawn, scenery) {
     impactListeners.add(fn);
     return () => { impactListeners.delete(fn); };
   }
+  // Sound 1.3: contact-POINT drag. The contact point velocity is the
+  // body velocity plus spin cross the contact offset (ri/rj are
+  // world-frame offsets from the body centre); its tangential part is
+  // genuine drag. A rolling body has a near-stationary contact point
+  // and reads ~0 even in continuous contact. Reports the strongest
+  // drag across the live contacts. Sound-only; physics untouched.
   function getContact() {
-    const vx = body.velocity.x, vy = body.velocity.y, vz = body.velocity.z;
-    const vn = vx * contactNx + vy * contactNy + vz * contactNz;
-    const tx = vx - vn * contactNx, ty = vy - vn * contactNy, tz = vz - vn * contactNz;
+    let drag = 0;
+    let found = false;
+    if (facts.phase === 'falling') {
+      const v = body.velocity, w = body.angularVelocity;
+      for (const c of world.contacts) {
+        if (c.bi !== body && c.bj !== body) continue;
+        found = true;
+        try {
+          const r = c.bi === body ? c.ri : c.rj;
+          const nl = Math.hypot(c.ni.x, c.ni.y, c.ni.z) || 1;
+          const nx = c.ni.x / nl, ny = c.ni.y / nl, nz = c.ni.z / nl;
+          const px = v.x + (w.y * r.z - w.z * r.y);
+          const py = v.y + (w.z * r.x - w.x * r.z);
+          const pz = v.z + (w.x * r.y - w.y * r.x);
+          const vn = px * nx + py * ny + pz * nz;
+          const tx = px - vn * nx, ty = py - vn * ny, tz = pz - vn * nz;
+          const d = Math.sqrt(tx * tx + ty * ty + tz * tz);
+          if (d > drag) drag = d;
+        } catch { /* sound must never break physics */ }
+      }
+    }
     return {
-      touching: facts.phase === 'falling' && touching,
-      slideSpeed: Math.hypot(tx, ty, tz),
+      touching: found,
+      slideSpeed: drag,
     };
   }
   function getState() {
