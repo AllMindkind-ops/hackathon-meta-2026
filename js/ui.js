@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // Fall-loop UI: one big button plus a small phase/facts readout for testing.
 // Gods' pass adds the summit panel (intention + MOOD, idle only) and the
 // verdict panel (gods' words + the button, landed). Touch-friendly.
-// No god text beyond the verdict, no What's next, no sounds.
+// No god text beyond the verdict, no sounds.
 
 const _bp = new THREE.Vector3();
 
@@ -15,6 +15,9 @@ export function getUI() {
     intention: document.getElementById('intention'),
     moodBox: document.getElementById('mood'),
     verdict: document.getElementById('verdict'),
+    nextBtn: document.getElementById('nextbtn'),
+    next: document.getElementById('next'),
+    nextClose: document.getElementById('nextclose'),
     godtext: document.getElementById('godtext'),
     // Gods' readout state: mood persists across falls; shape/disp/source
     // hold the last landed fall's dealt dice and verdict source.
@@ -28,6 +31,11 @@ export function getUI() {
 
 // Button modes: 'jump' (idle) -> big Jump button; 'falling' (mid-fall, all
 // input ignored) -> disabled "Falling..."; 'top' (landed) -> "Back to top".
+// What's-next overlay: display only. Closing returns to the game untouched.
+export function setNextVisible(ui, show) {
+  if (ui.next) ui.next.hidden = !show;
+  if (show && ui.nextClose) ui.nextClose.focus();
+}
 export function setButtonMode(ui, mode) {
   if (mode === 'falling') {
     ui.button.textContent = 'Falling...';

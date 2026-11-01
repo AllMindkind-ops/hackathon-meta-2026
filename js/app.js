@@ -14,7 +14,7 @@ import { createAvatar, updateFlail, flailConfig, updateVisualTumble, resetVisual
 import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance, snapChaseCamera, kickCamera, setFallProfile, setMirrorSign } from './camera.js';
 import { CHUTE_AZIMUTH } from './physics.js';
 import { createFall } from './physics.js';
-import { getUI, setButtonMode, setFacts, setSummitVisible, setSummitEditable, setMoodUI, setVerdictVisible, showVerdict, clearVerdict } from './ui.js';
+import { getUI, setButtonMode, setFacts, setSummitVisible, setSummitEditable, setMoodUI, setVerdictVisible, showVerdict, clearVerdict, setNextVisible } from './ui.js';
 import { rollDice, getVerdict, MOOD_FLAIL } from './god.js';
 import { beginRelease, updateRelease, kickRelease, endRelease, releaseFactor, releaseActive, prefersReducedMotion } from './release.js';
 import { beginWeather, updateWeather, endWeather } from './weather.js';
@@ -130,6 +130,7 @@ function doJump() {
     const typed = ui.intention ? ui.intention.value.trim() : '';
     intentionForFall = typed ? typed : null;
     maxSpeed = 0;
+    setNextVisible(ui, false);
     descentMax = 0;
     // Mirror coin: fair left/right per fall, MOOD-independent, dealt like the
     // dice. One sign drives camera side, orbit direction, and spin extras.
@@ -177,11 +178,19 @@ function doReset() {
   clearVerdict(ui, true);
   setVerdictVisible(ui, true);
   setSummitVisible(ui, true);
+  setNextVisible(ui, false);
   setFacts(ui, fall.getState(), camera);
   setButtonMode(ui, 'jump');
   setSummitEditable(ui, true);
 }
 
+// What's next: display-only overlay. Opening or closing it touches no game
+// state; Jump and Back to top always land back on a closed panel.
+ui.nextBtn.addEventListener('click', () => setNextVisible(ui, true));
+ui.nextClose.addEventListener('click', () => setNextVisible(ui, false));
+ui.next.addEventListener('click', (e) => {
+  if (e.target === ui.next) setNextVisible(ui, false);
+});
 ui.button.addEventListener('click', () => {
   const phase = fall.getState().phase;
   if (phase === 'landed') doReset();
@@ -197,6 +206,8 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') {
     e.preventDefault();
     doJump();
+  } else if (e.code === 'Escape') {
+    setNextVisible(ui, false);
   } else if (e.code === 'KeyR') {
     doReset();
   }
