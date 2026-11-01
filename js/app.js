@@ -382,6 +382,7 @@ renderer.setAnimationLoop(() => {
   updateFlail(avatar, s, dt);
   if (sound) s.thumps = sound.getThumpCount();
   if (sound) s.scr = sound.getScrapeTime();
+  if (sound) s.bed = sound.getBedTime();
   setFacts(ui, s, camera);
   if (s.phase === 'landed' && prevPhase !== 'landed') {
     if (sound) sound.playLanding();

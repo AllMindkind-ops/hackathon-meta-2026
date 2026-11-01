@@ -22,6 +22,23 @@ export const SCRAPE_BAND_HZ = 900;
 export const SCRAPE_BAND_Q = 1.4;
 export const SCRAPE_MIN_SPEED = 1.0;
 export const SCRAPE_SUSTAIN_S = 0.3;
+export const WIND_MIN_S = 2;
+export const WIND_FULL_S = 17;
+export const WIND_PEAK = 0.28;
+export const WIND_WHOOSH_LO = 250;
+export const WIND_WHOOSH_HI = 800;
+export const WIND_WHISTLE_LO = 800;
+export const WIND_WHISTLE_HI = 2200;
+export const WIND_ATTACK_S = 0.25;
+export const WIND_RELEASE_S = 0.4;
+export const GUST_DEPTH = 0.3;
+export const RUMBLE_LP_HZ = 180;
+export const RUMBLE_MIN_SPIN = 1.5;
+export const RUMBLE_FULL_SPIN = 12;
+export const RUMBLE_PEAK = 0.22;
+export const RUMBLE_ATTACK_S = 0.2;
+export const RUMBLE_RELEASE_S = 0.3;
+export const BED_AUDIBLE = 0.02;
 export const SCRAPE_MAX_GAIN = 0.22;
 export const SCRAPE_ATTACK_S = 0.03;
 export const SCRAPE_RELEASE_S = 0.12;
@@ -42,6 +59,7 @@ function stub() {
     isMuted: () => false,
     getThumpCount: () => 0,
     getScrapeTime: () => 0,
+    getBedTime: () => 0,
     resetThumpCount() {},
   };
 }
@@ -64,6 +82,12 @@ export function initSound() {
   let dragTimer = 0;
   let gateOpen = false;
   let gateOpenTime = 0;
+  let whooshFilter = null;
+  let whistleFilter = null;
+  let windBus = null;
+  let gustGain = null;
+  let rumbleGain = null;
+  let bedTime = 0;
   function buildGraph() {
     ctx = new AC();
     master = ctx.createGain();
@@ -91,6 +115,58 @@ export function initSound() {
     scrapeFilter.connect(scrapeGain);
     scrapeGain.connect(master);
     scrapeSrc.start();
+    windBus = ctx.createGain();
+    windBus.gain.value = 0;
+    gustGain = ctx.createGain();
+    gustGain.gain.value = 1;
+    windBus.connect(gustGain);
+    gustGain.connect(master);
+    const windSrcA = ctx.createBufferSource();
+    windSrcA.buffer = noiseBuf;
+    windSrcA.loop = true;
+    whooshFilter = ctx.createBiquadFilter();
+    whooshFilter.type = 'bandpass';
+    whooshFilter.frequency.value = WIND_WHOOSH_LO;
+    whooshFilter.Q.value = 0.6;
+    const whooshGain = ctx.createGain();
+    whooshGain.gain.value = 0.7;
+    windSrcA.connect(whooshFilter);
+    whooshFilter.connect(whooshGain);
+    whooshGain.connect(windBus);
+    const windSrcB = ctx.createBufferSource();
+    windSrcB.buffer = noiseBuf;
+    windSrcB.loop = true;
+    whistleFilter = ctx.createBiquadFilter();
+    whistleFilter.type = 'bandpass';
+    whistleFilter.frequency.value = WIND_WHISTLE_LO;
+    whistleFilter.Q.value = 2.0;
+    const whistleGain = ctx.createGain();
+    whistleGain.gain.value = 0.3;
+    windSrcB.connect(whistleFilter);
+    whistleFilter.connect(whistleGain);
+    whistleGain.connect(windBus);
+    windSrcA.start();
+    windSrcB.start();
+    const brownBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const bd = brownBuf.getChannelData(0);
+    let bl = 0;
+    for (let i = 0; i < bd.length; i++) {
+      const wht = Math.random() * 2 - 1;
+      bl = (bl + 0.02 * wht) / 1.02;
+      bd[i] = bl * 3.5;
+    }
+    const rumbleSrc = ctx.createBufferSource();
+    rumbleSrc.buffer = brownBuf;
+    rumbleSrc.loop = true;
+    const rumbleFilter = ctx.createBiquadFilter();
+    rumbleFilter.type = 'lowpass';
+    rumbleFilter.frequency.value = RUMBLE_LP_HZ;
+    rumbleGain = ctx.createGain();
+    rumbleGain.gain.value = 0;
+    rumbleSrc.connect(rumbleFilter);
+    rumbleFilter.connect(rumbleGain);
+    rumbleGain.connect(master);
+    rumbleSrc.start();
   }
 
   // Gesture gate: the context is created on the first user gesture and
@@ -174,16 +250,18 @@ export function initSound() {
     playThump(v, landing);
   }
 
-  // Continuous scrape (sound 1.3): keyed on contact-POINT drag, behind
-  // a sustain gate. True drag must hold continuously for SCRAPE_SUSTAIN_S
-  // before any sound; any break (contact lost or drag dropout) resets the
-  // timer to zero. While the gate is closed the target is 0, exactly as
-  // when airborne. Past the gate: bandpass character, gain and rate from
-  // drag speed, and the existing release when drag ends.
+  // Bed (sound 1.4): two CONTINUOUS voices, no events. Wind follows
+  // speed through twin bandpass layers plus a slow gust wander; rumble
+  // follows spin-while-in-contact through lowpassed brown noise. Every
+  // level moves only through slow smoothing constants, so nothing can
+  // chop or crackle. The 1.3 scrape sustain gate below is unchanged.
   function update(dt, contact) {
     if (!ctx || ctx.state !== 'running' || !scrapeGain) return;
-    const drag = (contact && contact.touching) ? contact.slideSpeed : 0;
-    if (!muted && contact && contact.touching && drag > SCRAPE_MIN_SPEED) {
+    const hasContact = Boolean(contact && contact.touching);
+    const drag = hasContact ? contact.slideSpeed : 0;
+    const speed = (contact && typeof contact.speed === 'number') ? contact.speed : 0;
+    const spin = (contact && typeof contact.spin === 'number') ? contact.spin : 0;
+    if (!muted && hasContact && drag > SCRAPE_MIN_SPEED) {
       dragTimer += dt;
     } else {
       dragTimer = 0;
@@ -202,6 +280,21 @@ export function initSound() {
       ? SCRAPE_ATTACK_S : SCRAPE_RELEASE_S;
     scrapeGain.gain.setTargetAtTime(target, now, tau);
     scrapeSrc.playbackRate.setTargetAtTime(rate, now, 0.05);
+    const sNorm = Math.min(1, Math.max(0, (speed - WIND_MIN_S) / (WIND_FULL_S - WIND_MIN_S)));
+    const windTarget = sNorm * sNorm * WIND_PEAK;
+    const wtau = windTarget > windBus.gain.value ? WIND_ATTACK_S : WIND_RELEASE_S;
+    windBus.gain.setTargetAtTime(windTarget, now, wtau);
+    whooshFilter.frequency.setTargetAtTime(WIND_WHOOSH_LO + (WIND_WHOOSH_HI - WIND_WHOOSH_LO) * sNorm, now, WIND_ATTACK_S);
+    whistleFilter.frequency.setTargetAtTime(WIND_WHISTLE_LO + (WIND_WHISTLE_HI - WIND_WHISTLE_LO) * sNorm, now, WIND_ATTACK_S);
+    const gust = 0.65 * Math.sin(6.2832 * 0.07 * now) + 0.35 * Math.sin(6.2832 * 0.13 * now + 1.7);
+    gustGain.gain.value = 1 + GUST_DEPTH * gust;
+    let rumbleTarget = 0;
+    if (hasContact && spin > RUMBLE_MIN_SPIN) {
+      rumbleTarget = Math.min(1, (spin - RUMBLE_MIN_SPIN) / (RUMBLE_FULL_SPIN - RUMBLE_MIN_SPIN)) * RUMBLE_PEAK;
+    }
+    const rtau = rumbleTarget > rumbleGain.gain.value ? RUMBLE_ATTACK_S : RUMBLE_RELEASE_S;
+    rumbleGain.gain.setTargetAtTime(rumbleTarget, now, rtau);
+    if (windBus.gain.value > BED_AUDIBLE || rumbleGain.gain.value > BED_AUDIBLE) bedTime += dt;
   }
 
   // Final resting impact: one deeper, longer thump, bypassing the
@@ -251,9 +344,11 @@ export function initSound() {
     isMuted: () => muted,
     getThumpCount: () => thumpCount,
     getScrapeTime: () => gateOpenTime,
+    getBedTime: () => bedTime,
     resetThumpCount() {
       thumpCount = 0;
       gateOpenTime = 0;
+      bedTime = 0;
       dragTimer = 0;
       gateOpen = false;
       gapUntil = 0;

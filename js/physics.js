@@ -514,8 +514,11 @@ export function createFall(spawn, scenery) {
   function getContact() {
     let drag = 0;
     let found = false;
+    let speed = 0, spin = 0;
     if (facts.phase === 'falling') {
       const v = body.velocity, w = body.angularVelocity;
+      speed = Math.hypot(v.x, v.y, v.z);
+      spin = Math.hypot(w.x, w.y, w.z);
       for (const c of world.contacts) {
         if (c.bi !== body && c.bj !== body) continue;
         found = true;
@@ -536,6 +539,8 @@ export function createFall(spawn, scenery) {
     return {
       touching: found,
       slideSpeed: drag,
+      speed: speed,
+      spin: spin,
     };
   }
   function getState() {

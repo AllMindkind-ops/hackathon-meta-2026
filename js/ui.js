@@ -120,7 +120,7 @@ export function setFacts(ui, s, camera) {
   const god = `  mood=${ui.god.mood} shape=${ui.god.shape} disp=${ui.god.disp} god=${ui.god.source} mir=${ui.god.mir ?? '-'}`;
   ui.facts.textContent =
     `PHASE ${s.phase.toUpperCase()}  t=${s.time.toFixed(1)}s` +
-    `  hits=${s.impacts} thumps=${s.thumps ?? 0} scr=${(s.scr ?? 0).toFixed(1)}  max=${s.strongest.toFixed(1)}m/s  air=${s.airtime.toFixed(1)}s` +
+    `  hits=${s.impacts} thumps=${s.thumps ?? 0} scr=${(s.scr ?? 0).toFixed(1)} bed=${(s.bed ?? 0).toFixed(1)}  max=${s.strongest.toFixed(1)}m/s  air=${s.airtime.toFixed(1)}s` +
     `  bn=${s.bounces}` +
     `  r=${s.r.toFixed(1)} y=${s.pos.y.toFixed(1)} v=${s.speed.toFixed(1)}` +
     gap + dist +
