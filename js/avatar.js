@@ -136,6 +136,19 @@ export function createAvatar() {
   );
   hood.position.y = 0.2;
   neck.add(hood);
+  // Crown cap: the shell above (thetaStart 0.5) leaves the pole open, which
+  // reads as a pale hole whenever the camera is above her. This cap closes
+  // it on the same sphere, 1 mm tucked inside the shell (r 0.249) and
+  // overlapping just past the shell's top edge (theta 0.56 > 0.5) so there
+  // is no seam crack and no coplanar z-fighting. Full circle in phi, so the
+  // face opening (phi gap) and its trim are untouched, and the cap rides
+  // the neck pivot with the shell, in the same hood material.
+  const crown = new THREE.Mesh(
+    new THREE.SphereGeometry(0.249, 12, 2, 0, Math.PI * 2, 0, 0.56),
+    hoodMat
+  );
+  crown.position.y = 0.2;
+  neck.add(crown);
   const trimRing = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.065, 8, 10), trim);
   trimRing.position.set(0, 0.2, 0.1);
   neck.add(trimRing);
