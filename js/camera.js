@@ -23,6 +23,16 @@ export const AIM_DROP = 0.55;
 // vertical FOV height on a phone viewport. A later round adds an Act 2 band.
 export const ACT1_DIST_MIN = 4.0;
 export const ACT1_DIST_MAX = 5.5;
+// Act 2 settle band (bottom quarter): slightly wider so the faster
+// bottom-quarter descent stays framed. Zoom follows the active band.
+export const ACT2_DIST_MIN = 6.5;
+export const ACT2_DIST_MAX = 8.0;
+// Orbit: starts when the release completes (~55% descent; the descent point
+// itself for wordless falls), ends as the bottom quarter begins. The swing
+// occupies the third quarter: tracking side to front three-quarter.
+export const ORBIT_START_D = 0.55;
+export const ORBIT_END_D = 0.75;
+export const ORBIT_END_ANGLE = 135;
 // Tracking offset: degrees around from directly behind the fall direction
 // toward the open side, plus which side (+1 keeps the existing chase side).
 export const CHASE_ANGLE_DEG = 40;
@@ -82,6 +92,9 @@ function profileSurfaceY(x, z) {
 // to the Act 1 band; _dist damps toward it so terrain never drives distance.
 let chaseDistance = (ACT1_DIST_MIN + ACT1_DIST_MAX) / 2;
 let _dist = chaseDistance;
+// Active zoom band: Act 1 until the orbit glides it toward Act 2.
+let _bandMin = ACT1_DIST_MIN;
+let _bandMax = ACT1_DIST_MAX;
 // Summit blend state: snapChaseCamera arms it, updateFallCamera settles it.
 let _blending = false;
 let _blendT = 0;
@@ -147,7 +160,7 @@ function floorY(x, z) {
 }
 
 export function setChaseDistance(d) {
-  chaseDistance = THREE.MathUtils.clamp(d, ACT1_DIST_MIN, ACT1_DIST_MAX);
+  chaseDistance = THREE.MathUtils.clamp(d, _bandMin, _bandMax);
 }
 
 export function bumpChaseDistance(f) {
@@ -223,7 +236,7 @@ function sightLift(cx, cy, cz, ax, ay, az) {
 // band, offset laterally so bounces read in profile, aimed with a velocity
 // lead and a downward bias for upper-center framing. mode 'lookback':
 // unchanged landing framing. Exactly one lookAt per call; up stays +Y.
-export function updateFallCamera(camera, avatar, dt, mode, vel) {
+export function updateFallCamera(camera, avatar, dt, mode, vel, descent = 0) {
   const dts = Math.min(Math.max(dt, 0), 0.05);
   const reduced = reducedMotion();
 
@@ -251,8 +264,25 @@ export function updateFallCamera(camera, avatar, dt, mode, vel) {
     return;
   }
 
+  // Orbit (third quarter): the lateral offset swings from the Act 1 tracking
+  // angle to the front three-quarter as descent runs ORBIT_START_D ->
+  // ORBIT_END_D. Every Round A guarantee below (floor, sight-line, lead,
+  // springed follow) applies after this and outranks the choreography: the
+  // swing rides higher and wider rather than clip. Reduced motion eases the
+  // swing through a gentler curve (same endpoints, slower peak).
+  const od = Math.min(Math.max(descent || 0, 0), 1);
+  let orbitT = (od - ORBIT_START_D) / (ORBIT_END_D - ORBIT_START_D);
+  orbitT = Math.min(Math.max(orbitT, 0), 1);
+  orbitT = reduced
+    ? orbitT * orbitT * orbitT * (orbitT * (orbitT * 6 - 15) + 10)
+    : orbitT * orbitT * (3 - 2 * orbitT);
+  const orbitAngle = CHASE_ANGLE_DEG + (ORBIT_END_ANGLE - CHASE_ANGLE_DEG) * orbitT;
+  // Settle: the band glides Act 1 -> Act 2 across the orbit; zoom clamps
+  // follow the active (interpolated) band.
+  _bandMin = ACT1_DIST_MIN + (ACT2_DIST_MIN - ACT1_DIST_MIN) * orbitT;
+  _bandMax = ACT1_DIST_MAX + (ACT2_DIST_MAX - ACT1_DIST_MAX) * orbitT;
   // Chase: deliberate damped distance, never terrain-driven.
-  const target = THREE.MathUtils.clamp(chaseDistance, ACT1_DIST_MIN, ACT1_DIST_MAX);
+  const target = THREE.MathUtils.clamp(chaseDistance, _bandMin, _bandMax);
   if (_blending) {
     // Snap the distance at blend start so framing is right from frame one;
     // the position still travels smoothly (no cut).
@@ -270,7 +300,7 @@ export function updateFallCamera(camera, avatar, dt, mode, vel) {
 
   // Tracking offset: behind the fall line, swung laterally by the named
   // angle toward the open side, elevated above the slope plane.
-  const ang = CHASE_ANGLE_DEG * Math.PI / 180;
+  const ang = orbitAngle * Math.PI / 180;
   const behindW = Math.cos(ang);
   const latW = Math.sin(ang) * CHASE_SIDE;
   const horiz = _dist * HORIZ_F;
@@ -364,6 +394,8 @@ export function snapChaseCamera(camera, avatar, vel) {
   void vel;
   _blending = true;
   _blendT = 0;
-  const target = THREE.MathUtils.clamp(chaseDistance, ACT1_DIST_MIN, ACT1_DIST_MAX);
+  _bandMin = ACT1_DIST_MIN;
+  _bandMax = ACT1_DIST_MAX;
+  const target = THREE.MathUtils.clamp(chaseDistance, _bandMin, _bandMax);
   _dist = target;
 }

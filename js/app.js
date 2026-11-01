@@ -10,7 +10,7 @@
 // constants never change.
 import * as THREE from 'three';
 import { createScene } from './scene.js';
-import { createAvatar, updateFlail, flailConfig } from './avatar.js';
+import { createAvatar, updateFlail, flailConfig, updateVisualTumble, resetVisualTumble } from './avatar.js';
 import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance, snapChaseCamera, kickCamera, setFallProfile } from './camera.js';
 import { CHUTE_AZIMUTH } from './physics.js';
 import { createFall } from './physics.js';
@@ -147,6 +147,7 @@ function doJump() {
       setSummitVisible(ui, false);
     }
     fall.launch();
+    resetVisualTumble(avatar);
     // Cut straight to the action: the bound holds the frame from here.
     syncAvatarToBody();
     snapChaseCamera(camera, avatar, fall.body.velocity);
@@ -163,6 +164,7 @@ function doReset() {
   if (ui.intention) ui.intention.value = '';
   if (ui.summit) ui.summit.style.opacity = '';
   fall.resetToTop();
+  resetVisualTumble(avatar);
   plantAvatarAtRest();
   avatar.quaternion.identity();
   placeBehindAvatar(camera, avatar);
@@ -315,12 +317,16 @@ renderer.setAnimationLoop(() => {
     // The body, the flail, and the chase camera do all the work.
     restPose = null;
     if (s.speed > maxSpeed) maxSpeed = s.speed;
+    // Tracked every falling frame (not only while words are live) so the
+    // orbit trigger is the descent point itself on wordless falls too.
+    descentMax = Math.max(descentMax, s.descent);
     syncAvatarToBody();
-    updateFallCamera(camera, avatar, dt, 'chase', fall.body.velocity);
+    updateVisualTumble(avatar, fall.body, s.speed, descentMax, dt, s.phase);
+    updateFallCamera(camera, avatar, dt, 'chase', fall.body.velocity, descentMax);
     // The words ride along: factor from the running descent maximum, gone
     // by 55% of the fall. The layer removes itself at factor 1.
     if (releaseActive()) {
-      descentMax = Math.max(descentMax, s.descent);
+      // tracked above every falling frame, words or none
       const f = releaseFactor(descentMax);
       updateRelease(f, dt, now);
       if (f >= 1) endRelease();

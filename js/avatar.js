@@ -265,3 +265,113 @@ export function updateFlail(avatar, st, dt) {
     A * 0.3 * Math.sin(w * 0.45 + 2.9),
     A * 0.35 * Math.sin(w * 0.6 + 0.5) + m.lag.z * spinCouple * 0.5);
 }
+
+// Two-act visual tumble (presentation only): the BODY keeps the deterministic
+// fall (path, impacts, timing, landing untouched); only how the avatar GROUP
+// rotates is reshaped. A persistent visual quaternion integrates a
+// descent-scaled copy of the body's angular velocity plus small multi-axis
+// extras (yaw about world up, roll about the fall line), so Act 1 reads at
+// roughly half rate with her face findable and Act 2 goes tornadic.
+// MOOD-independent: descent only; limb flail keeps its flailConfig amplitude.
+// The visual rejoins the body near the ground and resets off-fall, so the
+// landed look-back stands with no residual twist. Reduced motion flattens the
+// scaling to 1x and drops the extras.
+export const SPIN_RATE_ACT1 = 0.5;
+export const SPIN_RATE_ACT2 = 2.0;
+export const SPIN_ACT1_END = 0.5;
+export const SPIN_ACT2_START = 0.75;
+export const SPIN_YAW_EXTRA = 1.1;
+export const SPIN_ROLL_EXTRA = 0.8;
+// Rejoin window: visual eases back to the body's true orientation.
+const SPIN_RECON_FROM = 0.85;
+const SPIN_RECON_TO = 0.98;
+// Fall-line horizontal (same FACE as the chute): the extra roll axis.
+const SPIN_FX = Math.cos(Math.PI / 4);
+const SPIN_FZ = Math.sin(Math.PI / 4);
+
+// Named curve: half rate to ~50%, smooth ramp through the third quarter,
+// double rate for the bottom quarter.
+export function spinScaleForDescent(d) {
+  if (d <= SPIN_ACT1_END) return SPIN_RATE_ACT1;
+  if (d >= SPIN_ACT2_START) return SPIN_RATE_ACT2;
+  const t = (d - SPIN_ACT1_END) / (SPIN_ACT2_START - SPIN_ACT1_END);
+  const e = t * t * (3 - 2 * t);
+  return SPIN_RATE_ACT1 + (SPIN_RATE_ACT2 - SPIN_RATE_ACT1) * e;
+}
+
+const _tq = new THREE.Quaternion();
+const _tbody = new THREE.Quaternion();
+const _tax = new THREE.Vector3();
+const _toff = new THREE.Vector3();
+const _tup = new THREE.Vector3(0, 1, 0);
+const _troll = new THREE.Vector3(SPIN_FX, 0, SPIN_FZ);
+const spinMem = new WeakMap();
+
+function spinMemFor(avatar) {
+  let m = spinMem.get(avatar);
+  if (!m) {
+    m = { q: new THREE.Quaternion(), init: false };
+    spinMem.set(avatar, m);
+  }
+  return m;
+}
+
+function spinReducedMotion() {
+  return typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+export function resetVisualTumble(avatar) {
+  spinMemFor(avatar).init = false;
+}
+
+// Falling: sets group position exactly as the body-rider always has, and the
+// decoupled visual orientation. Any other phase only parks the memory so the
+// next fall starts from the body's true pose.
+export function updateVisualTumble(avatar, body, speed, descent, dt, phase) {
+  const m = spinMemFor(avatar);
+  if (phase !== 'falling') {
+    m.init = false;
+    return;
+  }
+  const dts = Math.min(Math.max(dt, 0), 0.05);
+  // Position: identical to the rider the fall has always used.
+  _toff.set(0, 0.65, 0).applyQuaternion(body.quaternion);
+  avatar.position.set(
+    body.position.x - _toff.x,
+    body.position.y - _toff.y,
+    body.position.z - _toff.z
+  );
+  if (!m.init) {
+    m.q.copy(body.quaternion);
+    m.init = true;
+  }
+  const dd = Math.min(Math.max(descent || 0, 0), 1);
+  const reduced = spinReducedMotion();
+  const s = reduced ? 1 : spinScaleForDescent(dd);
+  const wx = body.angularVelocity.x, wy = body.angularVelocity.y, wz = body.angularVelocity.z;
+  const wlen = Math.hypot(wx, wy, wz);
+  if (wlen > 1e-4 && s > 0) {
+    _tax.set(wx / wlen, wy / wlen, wz / wlen);
+    _tq.setFromAxisAngle(_tax, wlen * s * dts);
+    m.q.premultiply(_tq);
+  }
+  if (!reduced) {
+    const e = Math.min(1, speed / 25) * s;
+    if (e > 1e-4) {
+      _tq.setFromAxisAngle(_tup, SPIN_YAW_EXTRA * e * dts);
+      m.q.premultiply(_tq);
+      _tq.setFromAxisAngle(_troll, SPIN_ROLL_EXTRA * e * dts);
+      m.q.premultiply(_tq);
+    }
+  }
+  // Reconverge over the last stretch: rejoin the body's true orientation so
+  // the landing (and its ease upright) starts with no residual twist.
+  const rb = THREE.MathUtils.smoothstep(dd, SPIN_RECON_FROM, SPIN_RECON_TO);
+  if (rb > 0) {
+    _tbody.copy(body.quaternion);
+    m.q.slerp(_tbody, 1 - Math.exp(-(2 + 10 * rb) * dts));
+  }
+  avatar.quaternion.copy(m.q);
+}
