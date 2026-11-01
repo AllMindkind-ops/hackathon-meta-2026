@@ -14,8 +14,12 @@
 const COMPLETE_AT = 0.55;
 // Letter size: the single tuning knob for release readability (~2x the old
 // 15 px summit-panel size so the words read at a glance on a phone). Applied
-// to the layer below; styles.css carries the same value as fallback.
+// to the layer below; styles.css carries the same value as fallback. It is
+// the starting size: shrink-to-fit below may step down per fall, never below
+// RELEASE_LETTER_MIN_PX.
 export const RELEASE_LETTER_PX = 30;
+export const RELEASE_LETTER_MIN_PX = 13;
+export const RELEASE_FIT_MARGIN_PX = 24;
 export function releaseFactor(descentMax) {
   return Math.min(1, Math.max(0, descentMax) / COMPLETE_AT);
 }
@@ -103,6 +107,18 @@ export function beginRelease(text) {
     inner.appendChild(s);
   }
   document.body.appendChild(host);
+  // Shrink-to-fit: step down from 30 px only as far as needed for the whole
+  // wrapped block to fit the viewport with a small margin. Short intentions
+  // already fit, so they stay at 30 px exactly as before.
+  {
+    const top = host.getBoundingClientRect().top;
+    const avail = window.innerHeight - top - RELEASE_FIT_MARGIN_PX;
+    let px = RELEASE_LETTER_PX;
+    while (px > RELEASE_LETTER_MIN_PX && host.offsetHeight > avail) {
+      px -= 1;
+      host.style.fontSize = px + 'px';
+    }
+  }
   layer = host;
   kicker = inner;
   kick.x = kick.y = kick.r = 0;
