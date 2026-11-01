@@ -309,9 +309,9 @@ export function createFall(spawn, scenery) {
   };
   const lastImpact = { strength: 0, age: 99 };
   const lastHit = { id: 0, speed: 0 };
-  // Sound stream (sound-1): subscribers hear every collide impact velocity
-  // while falling, including sub-floor ones; the sound module applies its
-  // own floor. Notifying here changes no physics behavior.
+  // Sound stream (sound-1.1): subscribers hear each counted hit's impact
+  // velocity, notified from the counting point below. The counting
+  // criteria are untouched; this changes no physics behavior.
   const impactListeners = new Set();
   // Latest contact normal (unit; sign irrelevant for the tangent
   // projection) for the scrape slide-speed computation below.
@@ -325,9 +325,6 @@ export function createFall(spawn, scenery) {
   body.addEventListener('collide', (e) => {
     if (facts.phase !== 'falling') return;
     const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
-    for (const fn of impactListeners) {
-      try { fn(v); } catch { /* sound must never break physics */ }
-    }
     if (v > 1.5) {
       facts.impacts += 1;
       if (v > facts.strongest) facts.strongest = v;
@@ -335,6 +332,11 @@ export function createFall(spawn, scenery) {
       lastImpact.age = 0;
       lastHit.id += 1;
       lastHit.speed = v;
+      // Sound 1.1: thump stream listens here, at the counting point:
+      // once per counted hit, carrying that hit's impact velocity.
+      for (const fn of impactListeners) {
+        try { fn(v); } catch { /* sound must never break physics */ }
+      }
     }
   });
 

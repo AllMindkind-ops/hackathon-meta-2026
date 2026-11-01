@@ -7,7 +7,6 @@
 // exactly as before.
 export const MASTER_GAIN = 0.5;
 export const IMPACT_FLOOR_V = 1.5;
-export const THUMP_THROTTLE_MS = 40;
 export const THUMP_TONE_START_HZ = 140;
 export const THUMP_TONE_END_HZ = 45;
 export const THUMP_DUR_MIN_S = 0.12;
@@ -53,9 +52,6 @@ export function initSound() {
   let scrapeFilter = null;
   let scrapeGain = null;
   let muted = false;
-  let lastThumpAt = 0;
-  let pendingMax = 0;
-  let pendingTimer = null;
 
   function buildGraph() {
     ctx = new AC();
@@ -133,31 +129,13 @@ export function initSound() {
     src.stop(t + ndur + 0.02);
   }
 
-  // Discrete impacts. Sub-floor velocities (resting jitter) never sound.
-  // At most one thump per THUMP_THROTTLE_MS: impacts landing inside the
-  // window collapse to a single thump for the strongest of them.
+  // Discrete impacts (sound 1.1): physics notifies once per COUNTED hit,
+  // so every notification sounds - no throttle. The floor below only
+  // guards the invariant; counted hits always exceed it.
   function notifyImpact(v) {
     if (!ctx || muted || ctx.state !== 'running') return;
     if (v < IMPACT_FLOOR_V) return;
-    const now = performance.now();
-    const elapsed = now - lastThumpAt;
-    if (elapsed >= THUMP_THROTTLE_MS) {
-      const strongest = Math.max(v, pendingMax);
-      pendingMax = 0;
-      lastThumpAt = now;
-      playThump(strongest);
-    } else {
-      pendingMax = Math.max(pendingMax, v);
-      if (pendingTimer === null) {
-        pendingTimer = setTimeout(() => {
-          pendingTimer = null;
-          const strongest = pendingMax;
-          pendingMax = 0;
-          lastThumpAt = performance.now();
-          if (strongest >= IMPACT_FLOOR_V) playThump(strongest);
-        }, THUMP_THROTTLE_MS - elapsed);
-      }
-    }
+    playThump(v);
   }
 
   // Continuous scrape. The target is zero by construction whenever the
