@@ -30,18 +30,6 @@ export const BODY_RADIUS = 0.7;
 // reverted -- it sedated the roll. Damping is constant again; the only
 // delta vs 1.5 is linear 0.1 -> 0.12.)
 export const GRAVITY = -5.5;
-// Gravity ease-in (Round D.2): the fall starts light and gathers weight.
-// GRAVITY_START at launch, rising by smoothstep to exactly 1.0 at
-// GRAVITY_FULL_D (first quarter of descent), standard gravity below that,
-// forever. MOOD-independent: it is physics.
-export const GRAVITY_START = 0.45;
-export const GRAVITY_FULL_D = 0.25;
-function gravityMultiplier(d) {
-  if (d >= GRAVITY_FULL_D) return 1;
-  const t = Math.min(Math.max(d / GRAVITY_FULL_D, 0), 1);
-  const e = t * t * (3 - 2 * t);
-  return GRAVITY_START + (1 - GRAVITY_START) * e;
-}
 // Slope contact: skiddy enough to tumble, bouncy enough to leave the rock.
 export const SLOPE_FRICTION = 0.45;
 export const SLOPE_RESTITUTION = 0.8;
@@ -322,10 +310,6 @@ export function createFall(spawn, scenery) {
   const lastImpact = { strength: 0, age: 99 };
   const lastHit = { id: 0, speed: 0 };
   let settle = 0;
-  // Ease-in state: running max descent (same fraction the release, spin, and
-  // camera key off) and the live multiplier shown in the readout as grav=.
-  let fallDescentMax = 0;
-  let gravNow = 1;
   let zoneTime = 0;
   let airSinceContact = 0;
   let touching = false;
@@ -356,8 +340,6 @@ export function createFall(spawn, scenery) {
   // Jump: teleport to the chute top with one outward impulse. Facts restart.
   function launch() {
     placeAt(launchPos, LAUNCH_VEL);
-    fallDescentMax = 0;
-    gravNow = GRAVITY_START;
     facts.phase = 'falling';
     facts.time = 0;
     facts.impacts = 0;
@@ -377,8 +359,6 @@ export function createFall(spawn, scenery) {
   // Back to top: park at the summit spawn, everything zeroed, facts cleared.
   function resetToTop() {
     placeAt(spawn, { x: 0, y: 0, z: 0 });
-    fallDescentMax = 0;
-    gravNow = 1;
     facts.phase = 'idle';
     facts.time = 0;
     facts.impacts = 0;
@@ -421,15 +401,6 @@ export function createFall(spawn, scenery) {
 
   function step(dt) {
     if (facts.phase === 'falling') {
-      // Gravity ease-in: set the world weight from the running max descent
-      // BEFORE stepping, so the first quarter hangs light and 0.25+ falls
-      // at exactly standard gravity. Descent-keyed presentation unfolds
-      // later in time up top -- correct and desired, not compensated.
-      const _gd = body.position;
-      const _dNow = Math.min(1, Math.max((launchPos.y - _gd.y) / (launchPos.y - LAND_REF_Y), 0));
-      if (_dNow > fallDescentMax) fallDescentMax = _dNow;
-      gravNow = gravityMultiplier(fallDescentMax);
-      world.gravity.set(0, GRAVITY * gravNow, 0);
       world.step(1 / 60, dt, 3);
       facts.time += dt;
       lastImpact.age += dt;
@@ -551,7 +522,6 @@ export function createFall(spawn, scenery) {
       spin: { x: body.angularVelocity.x, y: body.angularVelocity.y, z: body.angularVelocity.z },
       airborne: facts.phase === 'falling' && !touching,
       impact: lastImpact.strength * Math.exp(-3 * lastImpact.age),
-      grav: gravNow,
     };
   }
 
