@@ -522,10 +522,10 @@ function fill(template, bundle) {
 }
 
 function fallbackVerdict(bundle) {
-  const qual = bundle.numbers === false && QUAL[bundle.shape];
-  const bank = qual || BANK;
-  const pool = (bank[bundle.shape] && bank[bundle.shape][bundle.disposition]) ||
-    BANK.DETAIL1.indifferent;
+  const numeralFree = bundle.numbers === false;
+  const bank = numeralFree ? QUAL : BANK;
+  const shapePool = bank[bundle.shape] || BANK[bundle.shape] || (numeralFree ? QUAL.DETAIL1 : BANK.DETAIL1);
+  const pool = shapePool[bundle.disposition] || shapePool.indifferent || (numeralFree ? QUAL.DETAIL1.indifferent : BANK.DETAIL1.indifferent);
   return fill(pool[Math.floor(Math.random() * pool.length)], bundle);
 }
 
@@ -647,9 +647,13 @@ function dealtBundle(bundle) {
 // must obey them. Fall facts travel rounded: no decimals, ever. A numeral
 // guard retries a numbers-rule break once, then falls back.
 // Returns { sentences, source }: source is 'endpoint' only when live text
-// was actually used, else 'fallback'.
+// was actually used, else 'fallback:<reason>' where reason is one of
+// timeout (fetch aborted), http (non-OK response), error (fetch threw),
+// guard (two endpoint attempts broke the numbers rule), parse (endpoint
+// text was unusable). Lab equipment for the next playtest.
 export async function getVerdict(bundle) {
   const dealt = dealtBundle(bundle);
+  let reason = 'error';
   if (GOD_ENDPOINT) {
     try {
       const ctrl = new AbortController();
@@ -679,17 +683,24 @@ export async function getVerdict(bundle) {
           if (second && numeralsOk(second, dealt.numbers)) {
             return { sentences: second, source: 'endpoint' };
           }
+          reason = 'guard';
+        } else {
+          reason = 'parse';
         }
+      } else {
+        reason = res ? 'http' : 'error';
       }
     } catch (e) {
-      // Fall through to the local bank. Never an error state.
+      // Fall through to the local bank. Never an error state. An aborted
+      // fetch is a timeout; anything else is an error.
+      reason = (e && (e.name === 'AbortError' || e.name === 'TimeoutError')) ? 'timeout' : 'error';
     }
   }
   try {
-    return { sentences: fallbackVerdict(dealt), source: 'fallback' };
+    return { sentences: fallbackVerdict(dealt), source: 'fallback:' + reason };
   } catch (e) {
     // Last resort: a throw inside fallback composition must never dead-end
     // the verdict silently. Static PURE1, no slots to fill, always resolves.
-    return { sentences: ['It is done.'], source: 'fallback' };
+    return { sentences: ['It is done.'], source: 'fallback:' + reason };
   }
 }
