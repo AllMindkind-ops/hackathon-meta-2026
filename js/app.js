@@ -10,8 +10,8 @@
 // constants never change.
 import * as THREE from 'three';
 import { createScene } from './scene.js';
-import { createAvatar, updateFlail, flailConfig, updateVisualTumble, resetVisualTumble } from './avatar.js';
-import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance, snapChaseCamera, kickCamera, setFallProfile } from './camera.js';
+import { createAvatar, updateFlail, flailConfig, updateVisualTumble, resetVisualTumble, setSpinMirror } from './avatar.js';
+import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance, snapChaseCamera, kickCamera, setFallProfile, setMirrorSign } from './camera.js';
 import { CHUTE_AZIMUTH } from './physics.js';
 import { createFall } from './physics.js';
 import { getUI, setButtonMode, setFacts, setSummitVisible, setSummitEditable, setMoodUI, setVerdictVisible, showVerdict, clearVerdict } from './ui.js';
@@ -131,6 +131,12 @@ function doJump() {
     intentionForFall = typed ? typed : null;
     maxSpeed = 0;
     descentMax = 0;
+    // Mirror coin: fair left/right per fall, MOOD-independent, dealt like the
+    // dice. One sign drives camera side, orbit direction, and spin extras.
+    const mirrorSign = Math.random() < 0.5 ? -1 : 1;
+    setSpinMirror(mirrorSign);
+    setMirrorSign(mirrorSign);
+    ui.god.mir = mirrorSign > 0 ? '+1' : '-1';
     // A new fall ends any previous verdict wait and its weather.
     endWeather();
     verdictToken += 1;

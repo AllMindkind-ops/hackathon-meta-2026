@@ -279,12 +279,18 @@ export function updateFlail(avatar, st, dt) {
 export const SPIN_RATE_ACT1 = 0.5;
 export const SPIN_RATE_ACT2 = 2.0;
 export const SPIN_ACT1_END = 0.5;
-export const SPIN_ACT2_START = 0.75;
+export const SPIN_MID_D = 0.65;
+export const SPIN_MID_RATE = 1.1;
+export const SPIN_ACT2_START = 0.8;
 export const SPIN_YAW_EXTRA = 1.1;
 export const SPIN_ROLL_EXTRA = 0.8;
+// Extras ramp: 0 at launch, growing through Act 1, full strength only in the
+// bottom half. The base body-driven rate curve is untouched by this.
+export const SPIN_EXTRAS_FROM = 0.0;
+export const SPIN_EXTRAS_FULL = 0.5;
 // Rejoin window: visual eases back to the body's true orientation.
-const SPIN_RECON_FROM = 0.85;
-const SPIN_RECON_TO = 0.98;
+const SPIN_RECON_FROM = 0.93;
+const SPIN_RECON_TO = 0.995;
 // Fall-line horizontal (same FACE as the chute): the extra roll axis.
 const SPIN_FX = Math.cos(Math.PI / 4);
 const SPIN_FZ = Math.sin(Math.PI / 4);
@@ -294,9 +300,14 @@ const SPIN_FZ = Math.sin(Math.PI / 4);
 export function spinScaleForDescent(d) {
   if (d <= SPIN_ACT1_END) return SPIN_RATE_ACT1;
   if (d >= SPIN_ACT2_START) return SPIN_RATE_ACT2;
-  const t = (d - SPIN_ACT1_END) / (SPIN_ACT2_START - SPIN_ACT1_END);
+  if (d <= SPIN_MID_D) {
+    const t = (d - SPIN_ACT1_END) / (SPIN_MID_D - SPIN_ACT1_END);
+    const e = t * t * (3 - 2 * t);
+    return SPIN_RATE_ACT1 + (SPIN_MID_RATE - SPIN_RATE_ACT1) * e;
+  }
+  const t = (d - SPIN_MID_D) / (SPIN_ACT2_START - SPIN_MID_D);
   const e = t * t * (3 - 2 * t);
-  return SPIN_RATE_ACT1 + (SPIN_RATE_ACT2 - SPIN_RATE_ACT1) * e;
+  return SPIN_MID_RATE + (SPIN_RATE_ACT2 - SPIN_MID_RATE) * e;
 }
 
 const _tq = new THREE.Quaternion();
@@ -305,6 +316,11 @@ const _tax = new THREE.Vector3();
 const _toff = new THREE.Vector3();
 const _tup = new THREE.Vector3(0, 1, 0);
 const _troll = new THREE.Vector3(SPIN_FX, 0, SPIN_FZ);
+// Mirror coin (dealt per fall at Jump): the extras lean/mirror per fall.
+let _spinMirror = 1;
+export function setSpinMirror(s) {
+  _spinMirror = s < 0 ? -1 : 1;
+}
 const spinMem = new WeakMap();
 
 function spinMemFor(avatar) {
@@ -358,11 +374,12 @@ export function updateVisualTumble(avatar, body, speed, descent, dt, phase) {
     m.q.premultiply(_tq);
   }
   if (!reduced) {
-    const e = Math.min(1, speed / 25) * s;
+    const xr = THREE.MathUtils.smoothstep(dd, SPIN_EXTRAS_FROM, SPIN_EXTRAS_FULL);
+    const e = Math.min(1, speed / 25) * s * xr;
     if (e > 1e-4) {
-      _tq.setFromAxisAngle(_tup, SPIN_YAW_EXTRA * e * dts);
+      _tq.setFromAxisAngle(_tup, SPIN_YAW_EXTRA * _spinMirror * e * dts);
       m.q.premultiply(_tq);
-      _tq.setFromAxisAngle(_troll, SPIN_ROLL_EXTRA * e * dts);
+      _tq.setFromAxisAngle(_troll, SPIN_ROLL_EXTRA * _spinMirror * e * dts);
       m.q.premultiply(_tq);
     }
   }

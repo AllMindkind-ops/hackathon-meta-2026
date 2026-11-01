@@ -163,6 +163,16 @@ export function setChaseDistance(d) {
   chaseDistance = THREE.MathUtils.clamp(d, _bandMin, _bandMax);
 }
 
+// Mirror coin (dealt per fall at Jump, MOOD-independent): flips the handedness
+// of the whole presentation -- tracking side, orbit swing direction, and the
+// spin extras mirror together. Same fall, mirrored.
+let _mirror = 1;
+export function setMirrorSign(s) {
+  _mirror = s < 0 ? -1 : 1;
+}
+export function getMirrorSign() {
+  return _mirror;
+}
 export function bumpChaseDistance(f) {
   setChaseDistance(chaseDistance * f);
 }
@@ -302,7 +312,7 @@ export function updateFallCamera(camera, avatar, dt, mode, vel, descent = 0) {
   // angle toward the open side, elevated above the slope plane.
   const ang = orbitAngle * Math.PI / 180;
   const behindW = Math.cos(ang);
-  const latW = Math.sin(ang) * CHASE_SIDE;
+  const latW = Math.sin(ang) * CHASE_SIDE * _mirror;
   const horiz = _dist * HORIZ_F;
   const vert = _dist * VERT_F;
   _desired.set(
@@ -337,8 +347,8 @@ export function updateFallCamera(camera, avatar, dt, mode, vel, descent = 0) {
     if (!reduced) {
       const slide = Math.min(2.0, Math.max(0, need - 2.5) * 0.5);
       if (slide > 0) {
-        _desired.x += CHUTE_LX * CHASE_SIDE * slide;
-        _desired.z += CHUTE_LZ * CHASE_SIDE * slide;
+        _desired.x += CHUTE_LX * CHASE_SIDE * _mirror * slide;
+        _desired.z += CHUTE_LZ * CHASE_SIDE * _mirror * slide;
       }
     }
   }

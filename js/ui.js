@@ -18,7 +18,7 @@ export function getUI() {
     godtext: document.getElementById('godtext'),
     // Gods' readout state: mood persists across falls; shape/disp/source
     // hold the last landed fall's dealt dice and verdict source.
-    god: { mood: 'RITUAL', shape: '-', disp: '-', source: '-' },
+    god: { mood: 'RITUAL', shape: '-', disp: '-', source: '-', mir: '-' },
   };
   ui.moodButtons = ui.moodBox
     ? Array.from(ui.moodBox.querySelectorAll('button[data-mood]'))
@@ -105,7 +105,7 @@ export function setFacts(ui, s, camera) {
   }
   const g = s.gapWorst;
   const gap = `  gap=${g < 0 ? '' : '+'}${Math.abs(g) >= 100 ? g.toFixed(0) : g.toFixed(2)}/${s.gapBox}`;
-  const god = `  mood=${ui.god.mood} shape=${ui.god.shape} disp=${ui.god.disp} god=${ui.god.source}`;
+  const god = `  mood=${ui.god.mood} shape=${ui.god.shape} disp=${ui.god.disp} god=${ui.god.source} mir=${ui.god.mir ?? '-'}`;
   ui.facts.textContent =
     `PHASE ${s.phase.toUpperCase()}  t=${s.time.toFixed(1)}s` +
     `  hits=${s.impacts}  max=${s.strongest.toFixed(1)}m/s  air=${s.airtime.toFixed(1)}s` +
