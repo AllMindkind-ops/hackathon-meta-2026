@@ -7,6 +7,7 @@
 // exactly as before.
 export const MASTER_GAIN = 0.5;
 export const IMPACT_FLOOR_V = 1.5;
+export const THUMP_MIN_GAP_MS = 150;
 export const THUMP_TONE_START_HZ = 140;
 export const THUMP_TONE_END_HZ = 45;
 export const THUMP_DUR_MIN_S = 0.12;
@@ -38,6 +39,8 @@ function stub() {
     toggleMute() {},
     setMuted() {},
     isMuted: () => false,
+    getThumpCount: () => 0,
+    resetThumpCount() {},
   };
 }
 
@@ -52,7 +55,10 @@ export function initSound() {
   let scrapeFilter = null;
   let scrapeGain = null;
   let muted = false;
-
+  let gapUntil = 0;
+  let pendingStrongest = 0;
+  let gapTimer = null;
+  let thumpCount = 0;
   function buildGraph() {
     ctx = new AC();
     master = ctx.createGain();
@@ -129,13 +135,38 @@ export function initSound() {
     src.stop(t + ndur + 0.02);
   }
 
-  // Discrete impacts (sound 1.1): physics notifies once per COUNTED hit,
-  // so every notification sounds - no throttle. The floor below only
-  // guards the invariant; counted hits always exceed it.
+  // Discrete impacts (sound 1.2): physics notifies once per COUNTED hit
+  // (the hits= increment). A spacing guard keeps thumps countable: at
+  // least THUMP_MIN_GAP_MS between thump starts; a notification inside
+  // the window only raises the remembered strongest, which plays alone
+  // when the window opens. Landing bypasses this guard.
   function notifyImpact(v) {
     if (!ctx || muted || ctx.state !== 'running') return;
     if (v < IMPACT_FLOOR_V) return;
-    playThump(v);
+    const now = performance.now();
+    if (now >= gapUntil) {
+      gapUntil = now + THUMP_MIN_GAP_MS;
+      pendingStrongest = 0;
+      startThump(v);
+    } else {
+      if (v > pendingStrongest) pendingStrongest = v;
+      if (gapTimer === null) {
+        gapTimer = setTimeout(fireGap, gapUntil - now);
+      }
+    }
+  }
+  function fireGap() {
+    gapTimer = null;
+    const strongest = pendingStrongest;
+    pendingStrongest = 0;
+    if (strongest >= IMPACT_FLOOR_V && ctx && !muted && ctx.state === 'running') {
+      gapUntil = performance.now() + THUMP_MIN_GAP_MS;
+      startThump(strongest);
+    }
+  }
+  function startThump(v, landing = false) {
+    thumpCount += 1;
+    playThump(v, landing);
   }
 
   // Continuous scrape. The target is zero by construction whenever the
@@ -162,7 +193,7 @@ export function initSound() {
   // throttle. Called from the existing falling -> landed transition.
   function playLanding() {
     if (!ctx || muted || ctx.state !== 'running') return;
-    playThump(THUMP_FULL_V, true);
+    startThump(THUMP_FULL_V, true);
   }
 
   const muteBtn = document.getElementById('mute');
@@ -203,5 +234,15 @@ export function initSound() {
     toggleMute,
     setMuted,
     isMuted: () => muted,
+    getThumpCount: () => thumpCount,
+    resetThumpCount() {
+      thumpCount = 0;
+      gapUntil = 0;
+      pendingStrongest = 0;
+      if (gapTimer !== null) {
+        clearTimeout(gapTimer);
+        gapTimer = null;
+      }
+    },
   };
 }

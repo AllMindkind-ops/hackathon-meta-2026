@@ -309,7 +309,7 @@ export function createFall(spawn, scenery) {
   };
   const lastImpact = { strength: 0, age: 99 };
   const lastHit = { id: 0, speed: 0 };
-  // Sound stream (sound-1.1): subscribers hear each counted hit's impact
+  // Sound stream (sound-1.2): subscribers hear each counted hit's impact
   // velocity, notified from the counting point below. The counting
   // criteria are untouched; this changes no physics behavior.
   const impactListeners = new Set();
@@ -327,16 +327,16 @@ export function createFall(spawn, scenery) {
     const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
     if (v > 1.5) {
       facts.impacts += 1;
+      // Sound 1.2: thump notification AT the strip counter's increment -
+      // exactly one per hits= increment, carrying that hit's velocity.
+      for (const fn of impactListeners) {
+        try { fn(v); } catch { /* sound must never break physics */ }
+      }
       if (v > facts.strongest) facts.strongest = v;
       lastImpact.strength = v;
       lastImpact.age = 0;
       lastHit.id += 1;
       lastHit.speed = v;
-      // Sound 1.1: thump stream listens here, at the counting point:
-      // once per counted hit, carrying that hit's impact velocity.
-      for (const fn of impactListeners) {
-        try { fn(v); } catch { /* sound must never break physics */ }
-      }
     }
   });
 

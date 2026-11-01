@@ -141,6 +141,7 @@ function doJump() {
     maxSpeed = 0;
     setNextVisible(ui, false);
     descentMax = 0;
+    if (sound) sound.resetThumpCount();
     // Mirror coin: fair left/right per fall, MOOD-independent, dealt like the
     // dice. One sign drives camera side, orbit direction, and spin extras.
     const mirrorSign = Math.random() < 0.5 ? -1 : 1;
@@ -379,6 +380,7 @@ renderer.setAnimationLoop(() => {
   // Idle holds whatever placeBehindAvatar set on transition.
 
   updateFlail(avatar, s, dt);
+  if (sound) s.thumps = sound.getThumpCount();
   setFacts(ui, s, camera);
   if (s.phase === 'landed' && prevPhase !== 'landed') {
     if (sound) sound.playLanding();
