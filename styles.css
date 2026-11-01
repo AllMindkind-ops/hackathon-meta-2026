@@ -198,6 +198,7 @@ html, body {
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  word-break: break-all;
 }
 
 #release .rsparks {
@@ -311,6 +312,25 @@ html, body {
   border-radius: 16px;
   padding: 16px 24px;
   cursor: pointer;
+}
+/* Narrow-phone fit (summit and canvas verified, untouched): keep the other
+   layers inside the device width. Desktop rendering is unchanged. */
+@media (max-width: 480px) {
+  #verdict,
+  #next .ncard {
+    box-sizing: border-box;
+  }
+  #next .nsec li span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  #facts {
+    top: auto;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    max-width: calc(100vw - 24px);
+    white-space: normal;
+    font-size: 11px;
+  }
 }
 #release .rletter {
   display: inline-block;
