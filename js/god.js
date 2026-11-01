@@ -15,9 +15,9 @@ export const GOD_ENDPOINT = 'https://god-voice.mybrainhasagiftshop.workers.dev';
 // SHEET_TEXT: the voice law handed to the model. Character core: jurisdiction,
 // witness-not-interpretation, fall detail, MOOD, temperament, restraint, and
 // verdict priority; plus the spectacle rule, fresh coinage, the session ban
-// list, and the dealt numbers/acknowledge flags. The sheet's own Allowed list
-// carries the only acknowledgment phrasings the model may mirror; every other
-// flourish is coined fresh per fall.
+// list, and the dealt numbers/acknowledge flags. The sheet states rules
+// abstractly and names only prohibitions: no example verdict lines anywhere,
+// so every flourish is coined fresh per fall.
 export const SHEET_TEXT = [
   'You are the gods of this mountain: ancient witnesses formed in the sky,',
   'one collective "we" that occasionally shows seams of internal disagreement.',
@@ -49,6 +49,7 @@ export const SHEET_TEXT = [
   'material. Phrases, sentence skeletons, and closers from earlier verdicts',
   'this session must not recur. The log is a ban list, not a style memory:',
   'never repeat, vary, or answer your own earlier verdicts.',
+  'Spent material includes sentence frames, not just phrases: a construction used for one verdict in this session (for example, announcing a name with \'This became the …\') may not frame another verdict in the same session.',
   'THE GODS\' JURISDICTION',
   'The gods witness the offering and the fall.',
   'The player\'s intention tells them what was brought to the mountain.',
@@ -62,7 +63,7 @@ export const SHEET_TEXT = [
   '',
   'WITNESS, NOT INTERPRETATION',
   'Treat the intention as known context, not as a metaphor prompt.',
-  'Allowed: "You brought grief here." / "The new job was named loudly." / "You asked to be liked." / "Thirty reps were offered."',
+  'Acknowledge the offering plainly, in the player\'s own words -- name what was brought, and nothing more. Invent the phrasing fresh each time; any acknowledgment phrasing is spent once used (see the ban list).',
   'Not allowed: inventing an empty leash, unopened letter, childhood wound, invisible burden, broken heart, or any other symbolic object or personal history; explaining the player to themselves; turning the intention into a lesson, diagnosis, moral, or psychological insight; claiming knowledge of what the player truly needs, fears, wants, or will become.',
   'The gods may speak about what was offered.',
   'They judge what fell — and judging need not mean grading it good or bad.',
@@ -76,7 +77,7 @@ export const SHEET_TEXT = [
   'Numbers are rare.',
   'An exact number may appear when it is itself the remarkable or absurd feature of the fall, especially at high MOOD.',
   'Never use statistical readouts to create emotional gravity, and never place clinical measurements over grief, loss, fear, or other tender material.',
-  'Prefer: "Three times the mountain caught you." Over: "You struck three surfaces at 18.4 meters per second."',
+  'Prefer a witnessed event in plain words over any sentence built out of measurements.',
   '',
   'MOOD',
   'MOOD changes expression, not identity.',
@@ -92,6 +93,7 @@ export const SHEET_TEXT = [
   'TEMPERAMENT',
   'The gods are ancient, observant, restrained, and slightly amused by existence.',
   'Their humor is for themselves.',
+  'They are, in their own ancient way, enjoying themselves, and it is allowed to show -- as dryness, as ceremony, as disproportionate delight in some small physical absurdity. It is never performed for the player.',
   'They do not entertain the player; the fall is the entertainment, and it is theirs.',
   'They do not perform for the player, chase laughs, hype the player up, seek approval, or try to be charming.',
   'Their amusement may appear as: dry understatement; ceremonial overreaction; mild pettiness; ancient impatience; disproportionate interest in some trivial physical detail; being thoroughly unconvinced; brief disagreement within the collective "we."',
@@ -209,13 +211,13 @@ export function rollSilence() {
   return 800 + Math.random() * 700;
 }
 
-// Numbers rate: numerals are rare by default; high MOOD doubles the odds.
+// Numbers rate: numerals are rare by default; high MOOD raises the odds.
 function numbersRate(mood) {
-  return mood === 'FUCK YES' ? 0.3 : 0.15;
+  return mood === 'FUCK YES' ? 0.15 : 0.05;
 }
 
 // The dice, rolled client-side when a fall lands, before any god call.
-// `numbers` deals whether numerals appear at all: base rate 0.15, 0.30 at
+// `numbers` deals whether numerals appear at all: base rate 0.05, 0.15 at
 // FUCK YES. The flag is authoritative and overrides the sheet.
 export function rollDice(mood, fallFacts) {
   return {
@@ -535,6 +537,61 @@ function splitSentences(text) {
   return t ? [t] : [];
 }
 
+// Numeral guard (endpoint path only). Counts numeral tokens: digit runs and
+// number words (one through twenty, thirty, forty, fifty, sixty, hundred,
+// and compounds). A hyphenated compound ("forty-six") counts as one token.
+const NUMBER_WORD = '(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|hundred)';
+
+function countNumerals(sentences) {
+  let rest = sentences.join(' ');
+  let count = 0;
+  const digits = rest.match(/\d+/g);
+  if (digits) count += digits.length;
+  rest = rest.replace(/\d+/g, ' ');
+  const compound = new RegExp('\\b' + NUMBER_WORD + '\\s*-\\s*' + NUMBER_WORD + '\\b', 'gi');
+  const compounds = rest.match(compound);
+  if (compounds) count += compounds.length;
+  rest = rest.replace(compound, ' ');
+  const singles = new RegExp('\\b' + NUMBER_WORD + '\\b', 'gi');
+  const words = rest.match(singles);
+  if (words) count += words.length;
+  return count;
+}
+
+function numeralsOk(sentences, numbersFlag) {
+  return countNumerals(sentences) <= (numbersFlag === false ? 0 : 1);
+}
+
+// Reprimand appended to the system text for the single retry after a
+// numbers-rule break.
+const NUMBERS_REPRIMAND = 'Your previous attempt broke the numbers rule for this fall. Obey the bundle\'s numbers flag exactly.';
+
+// One endpoint attempt: POSTs the call and returns clean sentences, or null
+// when the endpoint is unreachable or returns unusable text. Same timeout
+// and parsing as the first attempt.
+async function postOnce(system, dealt) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const res = await fetch(GOD_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ system, bundle: dealt }),
+      signal: ctrl.signal,
+    });
+    if (!res || !res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const raw = data && (data.sentences || data.verdict || data.text);
+    const sentences = Array.isArray(raw) ? raw.map(String) : splitSentences(raw || '');
+    const clean = sentences.map((s) => s.trim()).filter(Boolean);
+    return clean.length ? clean : null;
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Session record of dealt acknowledge flags, in fall order. The floor reads
 // it; each bundle.session entry is stamped from it so the record travels
 // with the bundle to the endpoint.
@@ -587,7 +644,8 @@ function dealtBundle(bundle) {
 
 // The call. POSTs { system: SHEET_TEXT, bundle }; the dealt shape,
 // disposition, and numbers flag travel inside the bundle and the response
-// must obey them. Fall facts travel rounded: no decimals, ever.
+// must obey them. Fall facts travel rounded: no decimals, ever. A numeral
+// guard retries a numbers-rule break once, then falls back.
 // Returns { sentences, source }: source is 'endpoint' only when live text
 // was actually used, else 'fallback'.
 export async function getVerdict(bundle) {
@@ -612,7 +670,16 @@ export async function getVerdict(bundle) {
         const raw = data && (data.sentences || data.verdict || data.text);
         const sentences = Array.isArray(raw) ? raw.map(String) : splitSentences(raw || '');
         const clean = sentences.map((s) => s.trim()).filter(Boolean);
-        if (clean.length) return { sentences: clean, source: 'endpoint' };
+        if (clean.length && numeralsOk(clean, dealt.numbers)) return { sentences: clean, source: 'endpoint' };
+        if (clean.length) {
+          // Numeral guard: the verdict broke the numbers rule. Retry once
+          // with the reprimand appended; a second violation is discarded
+          // and the fallback bank serves instead.
+          const second = await postOnce(SHEET_TEXT + '\n' + NUMBERS_REPRIMAND, dealt);
+          if (second && numeralsOk(second, dealt.numbers)) {
+            return { sentences: second, source: 'endpoint' };
+          }
+        }
       }
     } catch (e) {
       // Fall through to the local bank. Never an error state.
