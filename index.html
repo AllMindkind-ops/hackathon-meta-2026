@@ -25,7 +25,6 @@
       <button type="button" data-mood="RITUAL" class="on" aria-pressed="true">Ritual</button>
       <button type="button" data-mood="FUCK YES">Fuck yes</button>
     </div>
-    <button id="nextbtn" type="button">What's next</button>
   </div>
   <div id="next" hidden>
     <div class="ncard" role="dialog" aria-modal="true" aria-label="What's next">
@@ -68,7 +67,10 @@
   </div>
   <div id="verdict" hidden>
     <div id="godtext"></div>
-    <button id="jump" type="button">Jump</button>
+    <div class="brow">
+      <button id="jump" type="button">Jump</button>
+      <button id="nextbtn" type="button" hidden>What's next</button>
+    </div>
   </div>
   <script type="module" src="./js/app.js"></script>
 </body>

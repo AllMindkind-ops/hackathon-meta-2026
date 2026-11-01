@@ -37,6 +37,9 @@ export function setNextVisible(ui, show) {
   if (show && ui.nextClose) ui.nextClose.focus();
 }
 export function setButtonMode(ui, mode) {
+  // What's next arrives with the verdict, like Back to top: hidden at the
+  // summit, mid-fall, and through the verdict wait.
+  if (ui.nextBtn) ui.nextBtn.hidden = mode !== 'top';
   if (mode === 'falling') {
     ui.button.textContent = 'Falling...';
     ui.button.disabled = true;
