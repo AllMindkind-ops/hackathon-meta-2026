@@ -182,6 +182,7 @@ function flailMem(avatar) {
       lag: { x: 0, y: 0, z: 0 },
       fold: 0,
       foldV: 0,
+      starfish: false,
     };
     flailMemory.set(avatar, m);
   }
@@ -230,6 +231,10 @@ export function updateFlail(avatar, st, dt) {
     return;
   }
   const energy = Math.min(1, st.speed / 30);
+  if (m.starfish) {
+    poseStarfish(avatar, m.t);
+    return;
+  }
 
   // Lagged spin: joints trail the body's turn instead of matching it.
   const lagRate = 3 / (0.6 + L);
@@ -277,6 +282,27 @@ export function updateFlail(avatar, st, dt) {
     A * 0.6 * Math.sin(w * 0.7 + 1.3) + m.fold * 0.5 + m.lag.x * spinCouple,
     A * 0.3 * Math.sin(w * 0.45 + 2.9),
     A * 0.35 * Math.sin(w * 0.6 + 0.5) + m.lag.z * spinCouple * 0.5);
+}
+
+// Starfish preset (Round C, Send flavor): spread limbs, slow windmill,
+// head level. Presentation only; set at the Send handoff, cleared at the
+// first impact (phase exits ease home on their own anyway).
+export function setStarfish(avatar, on) {
+  flailMem(avatar).starfish = !!on;
+}
+export function poseStarfish(avatar, t) {
+  const P = avatar.userData.pivots;
+  if (!P) return;
+  const m = flailMem(avatar);
+  const w = t * 2.2;
+  const set = (joint, rest, x, y, z) => {
+    joint.rotation.set(rest.x + x, rest.y + y, rest.z + z);
+  };
+  set(P.shoulderL, m.rest.shoulderL, Math.sin(w) * 0.5, 0, 1.35);
+  set(P.shoulderR, m.rest.shoulderR, Math.sin(w + Math.PI) * 0.5, 0, -1.35);
+  set(P.hipL, m.rest.hipL, 0.15, 0, 0.45);
+  set(P.hipR, m.rest.hipR, -0.15, 0, -0.45);
+  set(P.neck, m.rest.neck, -0.25, 0, 0);
 }
 
 // Two-act visual tumble (presentation only): the BODY keeps the deterministic

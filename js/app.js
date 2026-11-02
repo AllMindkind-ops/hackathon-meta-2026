@@ -10,8 +10,9 @@
 // constants never change.
 import * as THREE from 'three';
 import { createScene } from './scene.js';
-import { createAvatar, updateFlail, flailConfig, updateVisualTumble, resetVisualTumble, setSpinMirror } from './avatar.js';
+import { createAvatar, updateFlail, flailConfig, updateVisualTumble, resetVisualTumble, setSpinMirror, setStarfish } from './avatar.js';
 import { createCamera, placeBehindAvatar, updateFallCamera, bumpChaseDistance, snapChaseCamera, kickCamera, setFallProfile, setMirrorSign } from './camera.js';
+import { createCutscene, dealFlavor, updateFreefallCamera, FREEFALL_S } from './cutscene.js';
 import { CHUTE_AZIMUTH } from './physics.js';
 import { createFall } from './physics.js';
 import { getUI, setButtonMode, setFacts, setSummitVisible, setSummitEditable, setMoodUI, setVerdictVisible, showVerdict, clearVerdict, setNextVisible } from './ui.js';
@@ -45,6 +46,12 @@ import('./sound.js').then((m) => {
   sound = m.initSound();
   fall.onImpact((v) => sound.notifyImpact(v));
 }).catch(() => { sound = null; });
+// Round C staging: the cutscene owns avatar + camera between Jump and the
+// physics handoff; the free-fall beat overlays the chase for its first beat.
+const cutscene = createCutscene();
+let freefallT = Infinity;
+let starfishOn = false;
+let starfishFrom = 0;
 // Rest planting (visual only): the summit spawn carries the nominal
 // SUMMIT_Y, so stand the avatar group on the BUILT mesh instead --
 // raycast straight down at the start x,z (same rock-mesh rules as the
@@ -133,6 +140,7 @@ function fadeSummitFast(ui) {
 }
 
 function doJump() {
+  if (cutscene.active) return;
   if (fall.getState().phase !== 'falling') {
     // Whatever is typed (or nothing) is stored for this fall. Wordless
     // falls are first-class: empty input becomes null.
@@ -153,24 +161,46 @@ function doJump() {
     verdictToken += 1;
     clearVerdict(ui, true);
     setVerdictVisible(ui, false);
-    if (intentionForFall && !prefersReducedMotion()) {
-      // The words leave with the player; the summit panel leaves as today.
-      beginRelease(intentionForFall);
-      setSummitVisible(ui, false);
-    } else if (prefersReducedMotion()) {
+    // The flavor is dealt at Jump, MOOD-weighted; the strip names it.
+    ui.god.flav = dealFlavor(mood);
+    // The summit leaves now, as today; the release layer waits for the
+    // handoff so its timing relative to the fall is unchanged.
+    if (prefersReducedMotion()) {
       // No theatrics: the panel fades out quickly and no layer ever forms.
       fadeSummitFast(ui);
     } else {
       setSummitVisible(ui, false);
     }
-    fall.launch();
-    resetVisualTumble(avatar);
-    // Cut straight to the action: the bound holds the frame from here.
-    syncAvatarToBody();
-    snapChaseCamera(camera, avatar, fall.body.velocity);
-    setButtonMode(ui, 'falling');
+    if (prefersReducedMotion()) {
+      fireLaunch();
+    } else {
+      // Staged cutscene: physics launches at the handoff, identical state.
+      cutscene.start({ avatar, camera, launchPos: fall.launchPos, flavor: ui.god.flav, er: _er });
+    }
   }
 }
+
+// Handoff: the standard physics launch, identical state whatever the
+// staging before it. The release layer is created here so the words shed
+// against the fall exactly as they do today.
+function fireLaunch() {
+  if (intentionForFall && !prefersReducedMotion()) {
+    beginRelease(intentionForFall);
+  }
+  fall.launch();
+  resetVisualTumble(avatar);
+  // The Send rides the starfish through the free-fall beat to first impact.
+  const send = ui.god.flav === 'send' && !prefersReducedMotion();
+  setStarfish(avatar, send);
+  starfishOn = send;
+  starfishFrom = fall.getState().hitId;
+  // Cut straight to the action: the bound holds the frame from here.
+  syncAvatarToBody();
+  snapChaseCamera(camera, avatar, fall.body.velocity);
+  setButtonMode(ui, 'falling');
+  freefallT = 0;
+}
+
 
 function doReset() {
   verdictToken += 1;
@@ -181,6 +211,10 @@ function doReset() {
   if (ui.intention) ui.intention.value = '';
   if (ui.count) ui.count.textContent = '0 / 1000';
   if (ui.summit) ui.summit.style.opacity = '';
+  cutscene.cancel();
+  setStarfish(avatar, false);
+  starfishOn = false;
+  freefallT = Infinity;
   fall.resetToTop();
   resetVisualTumble(avatar);
   plantAvatarAtRest();
@@ -339,6 +373,17 @@ renderer.setAnimationLoop(() => {
   const s = fall.step(dt);
   if (sound) sound.update(dt, fall.getContact());
 
+  // Round C staging: the cutscene owns the frame until the handoff fires
+  // the standard launch. Physics keeps stepping untouched underneath.
+  if (cutscene.active) {
+    updateFlail(avatar, s, dt);
+    setFacts(ui, s, camera);
+    if (cutscene.update(dt) === 'handoff') fireLaunch();
+    prevPhase = s.phase;
+    renderer.render(scene, camera);
+    return;
+  }
+
   // Impact kick: a fresh hard bounce pops the look target. Felt, not a flash.
   if (s.hitId !== prevHitId) {
     prevHitId = s.hitId;
@@ -358,6 +403,16 @@ renderer.setAnimationLoop(() => {
     syncAvatarToBody();
     updateVisualTumble(avatar, fall.body, s.speed, descentMax, dt, s.phase);
     updateFallCamera(camera, avatar, dt, 'chase', fall.body.velocity, descentMax);
+    if (starfishOn && s.hitId !== starfishFrom) {
+      setStarfish(avatar, false);
+      starfishOn = false;
+    }
+    // Free-fall beat: hold the frame a touch high so the avatar drops away,
+    // then the armed Round A blend settles before the first impact.
+    if (!prefersReducedMotion() && freefallT < FREEFALL_S) {
+      updateFreefallCamera(camera, avatar, freefallT);
+      freefallT += dt;
+    }
     // The words ride along: factor from the running descent maximum, gone
     // by 55% of the fall. The layer removes itself at factor 1.
     if (releaseActive()) {
@@ -386,6 +441,8 @@ renderer.setAnimationLoop(() => {
   setFacts(ui, s, camera);
   if (s.phase === 'landed' && prevPhase !== 'landed') {
     if (sound) sound.playLanding();
+    setStarfish(avatar, false);
+    starfishOn = false;
     // Bare scene until the gods speak: no panel, no button anywhere.
     // Panel + Back to top arrive together with the sentences, below.
     // Rest spot in the open apron: a few metres downslope of where the body
@@ -418,6 +475,9 @@ renderer.setAnimationLoop(() => {
     verdictToken += 1;
     endRelease();
     syncAvatarToBody();
+    setStarfish(avatar, false);
+    starfishOn = false;
+    freefallT = Infinity;
     placeBehindAvatar(camera, avatar);
     clearVerdict(ui, true);
     setVerdictVisible(ui, true);

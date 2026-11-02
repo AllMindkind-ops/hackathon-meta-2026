@@ -22,7 +22,7 @@ export function getUI() {
     godtext: document.getElementById('godtext'),
     // Gods' readout state: mood persists across falls; shape/disp/source
     // hold the last landed fall's dealt dice and verdict source.
-    god: { mood: 'RITUAL', shape: '-', disp: '-', source: '-', mir: '-' },
+    god: { mood: 'RITUAL', shape: '-', disp: '-', source: '-', mir: '-', flav: '-' },
   };
   ui.moodButtons = ui.moodBox
     ? Array.from(ui.moodBox.querySelectorAll('button[data-mood]'))
@@ -121,7 +121,7 @@ export function setFacts(ui, s, camera) {
   ui.facts.textContent =
     `PHASE ${s.phase.toUpperCase()}  t=${s.time.toFixed(1)}s` +
     `  hits=${s.impacts} thumps=${s.thumps ?? 0} scr=${(s.scr ?? 0).toFixed(1)} bed=${(s.bed ?? 0).toFixed(1)}  max=${s.strongest.toFixed(1)}m/s  air=${s.airtime.toFixed(1)}s` +
-    `  bn=${s.bounces}` +
+    `  bn=${s.bounces} flav=${ui.god.flav ?? '-'}` +
     `  r=${s.r.toFixed(1)} y=${s.pos.y.toFixed(1)} v=${s.speed.toFixed(1)}` +
     gap + dist +
     `  resets=${s.resets} end=${s.endReason}${cam}${god}`;
