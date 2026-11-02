@@ -27,6 +27,15 @@ export function getUI() {
   ui.moodButtons = ui.moodBox
     ? Array.from(ui.moodBox.querySelectorAll('button[data-mood]'))
     : [];
+  // Packaging: the PHASE strip is lab equipment — render it only when the
+  // URL carries ?dev=1. Readout computation in setFacts stays; this is
+  // display gating only. #facts is position:fixed, so its absence shifts
+  // no other element.
+  if (ui.facts) {
+    const dev = typeof window !== 'undefined' && typeof window.location !== 'undefined'
+      && new URLSearchParams(window.location.search).get('dev') === '1';
+    ui.facts.hidden = !dev;
+  }
   return ui;
 }
 

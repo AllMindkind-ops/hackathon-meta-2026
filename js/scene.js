@@ -624,22 +624,6 @@ export function createScene() {
   sun.shadow.normalBias = 2;
   scene.add(sun, sun.target);
 
-  // Painted meadow: warm grassy center fading to dusk at the edges.
-  function meadowTexture() {
-    const c = document.createElement('canvas');
-    c.width = c.height = 512;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(256, 256, 40, 256, 256, 256);
-    grad.addColorStop(0, '#77854e');
-    grad.addColorStop(0.55, '#5a6b45');
-    grad.addColorStop(1, '#55554e');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 512, 512);
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 4;
-    return t;
-  }
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(2200, 2200),
     groundMaterial()
